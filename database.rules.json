@@ -1,0 +1,20 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rooms": {
+      "$code": {
+        ".validate": "$code.matches(/^[A-HJ-NP-Z2-9]{6}$/)",
+        ".read": "auth != null",
+        ".write": "auth != null && (data.exists() ? (data.child('black').val() === auth.uid || data.child('white').val() === auth.uid || data.child('white').val() === '') : newData.child('black').val() === auth.uid)",
+        "moves": { ".validate": "newData.isString() && newData.val().length <= 450" }
+      }
+    },
+    "games": {
+      "$id": {
+        ".write": "auth != null && !data.exists()",
+        ".validate": "newData.hasChildren(['mode', 'moves', 'winner', 'n']) && newData.child('moves').isString() && newData.child('moves').val().length <= 1200"
+      }
+    }
+  }
+}

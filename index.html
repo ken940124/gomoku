@@ -1,0 +1,1813 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>五子棋對弈</title>
+<style>
+  :root {
+    --paper: #f2ece1;
+    --panel: #fbf7ef;
+    --panel-2: #f6efe1;
+    --ink: #221c14;
+    --ink-soft: #5b5142;
+    --line: rgba(34, 28, 20, 0.14);
+    --seal: #b3392c;
+    --seal-soft: rgba(179, 57, 44, 0.12);
+    --good: #4f7a4f;
+    --good-soft: rgba(90, 130, 90, 0.14);
+    --btn-bg: #221c14;
+    --btn-fg: #f2ece1;
+    --btn-bg-hover: #3a3123;
+    --btn2-bg: transparent;
+    --btn2-border: rgba(34, 28, 20, 0.35);
+    --chip-b-bg: #221c14;
+    --chip-b-fg: #f2ece1;
+    --chip-w-bg: #fbf7ef;
+    --chip-w-fg: #221c14;
+    --chip-border: rgba(34, 28, 20, 0.35);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #17140f;
+      --panel: #201b13;
+      --panel-2: #262016;
+      --ink: #ede4d3;
+      --ink-soft: #b3a68e;
+      --line: rgba(237, 228, 211, 0.14);
+      --seal: #e0604f;
+      --seal-soft: rgba(224, 96, 79, 0.16);
+      --good: #8fbf8f;
+      --good-soft: rgba(143, 191, 143, 0.14);
+      --btn-bg: #ede4d3;
+      --btn-fg: #17140f;
+      --btn-bg-hover: #d9cdb4;
+      --btn2-border: rgba(237, 228, 211, 0.3);
+      --chip-b-bg: #0f0d0a;
+      --chip-b-fg: #ede4d3;
+      --chip-w-bg: #ede4d3;
+      --chip-w-fg: #17140f;
+      --chip-border: rgba(237, 228, 211, 0.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #17140f;
+    --panel: #201b13;
+    --panel-2: #262016;
+    --ink: #ede4d3;
+    --ink-soft: #b3a68e;
+    --line: rgba(237, 228, 211, 0.14);
+    --seal: #e0604f;
+    --seal-soft: rgba(224, 96, 79, 0.16);
+    --good: #8fbf8f;
+    --good-soft: rgba(143, 191, 143, 0.14);
+    --btn-bg: #ede4d3;
+    --btn-fg: #17140f;
+    --btn-bg-hover: #d9cdb4;
+    --btn2-border: rgba(237, 228, 211, 0.3);
+    --chip-b-bg: #0f0d0a;
+    --chip-b-fg: #ede4d3;
+    --chip-w-bg: #ede4d3;
+    --chip-w-fg: #17140f;
+    --chip-border: rgba(237, 228, 211, 0.3);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "Helvetica Neue", sans-serif;
+    line-height: 1.7;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 20px 80px; display: flex; flex-direction: column; gap: 32px; }
+  h1, h2, h3 { font-family: "Noto Serif TC", "Songti TC", "PMingLiU", serif; text-wrap: balance; margin: 0; font-weight: 700; }
+
+  header.hero { display: flex; flex-direction: column; gap: 8px; }
+  .eyebrow { font-size: 13px; letter-spacing: 0.14em; color: var(--seal); font-weight: 600; }
+  h1 { font-size: clamp(24px, 3.4vw, 32px); }
+  .hero p { color: var(--ink-soft); max-width: 62ch; font-size: 15px; margin: 2px 0 0; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-items: start; }
+  @media (max-width: 780px) { .stage { grid-template-columns: 1fr; } }
+
+  .board-card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+  .board-canvas-holder { width: 100%; aspect-ratio: 1/1; position: relative; }
+  canvas#board { width: 100%; height: 100%; display: block; border-radius: 3px; touch-action: none; }
+  canvas#board.clickable { cursor: pointer; }
+  canvas#board.locked { cursor: not-allowed; }
+
+  .status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .turn-pill { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; padding: 6px 14px; border-radius: 999px; background: var(--panel-2); }
+  .turn-pill .stone-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .turn-pill .stone-dot.b { background: #221c14; }
+  .turn-pill .stone-dot.w { background: #fbf7ef; border: 1px solid rgba(34,28,20,.4); }
+  .thinking { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
+  .spinner { width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--seal); animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
+  .side-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+  .side-panel h3 { font-size: 15px; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 13.5px; color: var(--ink-soft); }
+  .stat-row strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  button.btn { appearance: none; border: none; background: var(--btn-bg); color: var(--btn-fg); font-family: inherit; font-size: 14px; font-weight: 600; padding: 10px 18px; border-radius: 4px; cursor: pointer; }
+  button.btn:hover { background: var(--btn-bg-hover); }
+  button.btn:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }
+  button.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.btn.secondary { background: var(--btn2-bg); color: var(--ink); border: 1px solid var(--btn2-border); }
+  button.btn.secondary:hover { background: var(--panel-2); }
+
+  .movelist-mini { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; max-height: 220px; overflow-y: auto; }
+  .movelist-mini .chip { border: 1px solid var(--chip-border); border-radius: 999px; font-size: 11px; font-weight: 600; text-align: center; padding: 4px 0; font-variant-numeric: tabular-nums; background: var(--chip-w-bg); color: var(--chip-w-fg); }
+  .movelist-mini .chip.b { background: var(--chip-b-bg); color: var(--chip-b-fg); }
+
+  .endgame { border: 1px solid var(--seal); background: var(--seal-soft); border-radius: 6px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .endgame.you-win { border-color: var(--good); background: var(--good-soft); }
+  .endgame .headline { font-family: "Noto Serif TC", serif; font-weight: 700; font-size: 17px; }
+  .endgame .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .forbidden-msg { background: var(--seal-soft); border: 1px solid var(--seal); color: var(--seal); border-radius: 4px; padding: 8px 12px; font-size: 13.5px; font-weight: 600; }
+
+  .renju-toggle { display: flex; align-items: center; gap: 8px; font-size: 13.5px; cursor: pointer; user-select: none; }
+  .renju-toggle input { accent-color: var(--seal); width: 15px; height: 15px; }
+
+  .status-row button.btn.secondary { margin-left: auto; font-size: 12.5px; padding: 7px 12px; }
+
+  .analyze-progress { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
+  .analyze-result { background: var(--panel-2); border-radius: 4px; padding: 14px 16px; font-size: 13.5px; display: flex; flex-direction: column; gap: 8px; }
+  .analyze-result .ar-title { font-family: "Noto Serif TC", serif; font-weight: 700; font-size: 15px; }
+  .analyze-result .ar-alts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .analyze-result .ar-alts .chip2 { background: var(--good-soft); color: var(--good); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* replay mode */
+  .replay-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .replay-controls .readout { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 120px; font-size: 13.5px; }
+  input[type="range"] { flex: 1 1 140px; accent-color: var(--seal); }
+  .hidden { display: none !important; }
+
+  footer { color: var(--ink-soft); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 18px; }
+
+  /* menu */
+  .menu { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 24px; display: flex; flex-direction: column; gap: 18px; max-width: 560px; }
+  .menu h2 { font-size: 19px; }
+  .menu-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  button.menu-opt { appearance: none; text-align: left; font-family: inherit; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 16px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+  button.menu-opt:hover { border-color: var(--seal); }
+  button.menu-opt:focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }
+  button.menu-opt:disabled { opacity: 0.45; cursor: not-allowed; border-color: var(--line); }
+  .menu-opt .t { font-weight: 700; font-size: 16px; }
+  .menu-opt .d { font-size: 13px; color: var(--ink-soft); }
+  .menu-back { align-self: flex-start; }
+  .code-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .code-row input { flex: 1 1 160px; min-width: 0; font-family: inherit; font-size: 20px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; padding: 8px 12px; border: 1px solid var(--btn2-border); border-radius: 4px; background: var(--paper); color: var(--ink); }
+  .menu-msg { font-size: 13.5px; color: var(--seal); min-height: 1em; }
+  .menu-note { font-size: 13px; color: var(--ink-soft); }
+
+  .room-box { background: var(--panel-2); border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .room-code { font-size: 26px; font-weight: 700; letter-spacing: 0.2em; font-variant-numeric: tabular-nums; }
+  .room-box .btn { font-size: 13px; padding: 7px 12px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="hero">
+    <div class="eyebrow">GOMOKU · 對弈</div>
+    <h1>五子棋對弈</h1>
+    <p id="heroText">可以跟瀏覽器內建的 AI 引擎（minimax + alpha-beta + VCF/VCT）對下，也可以和朋友在同一台裝置輪流下，或開線上房間遠端對戰。預設開啟標準連珠禁手（限制黑棋三三、四四、長連）。棋局結束後可以復盤、請 AI 找出關鍵轉折點。</p>
+  </header>
+
+  <section class="menu" id="menu">
+    <div id="menuMain">
+      <h2 style="margin-bottom:14px">選擇模式</h2>
+      <div class="menu-options">
+        <button class="menu-opt" id="optAI"><span class="t">對戰 AI</span><span class="d">你執黑先手，白棋由 AI 引擎應對</span></button>
+        <button class="menu-opt" id="optTwo"><span class="t">雙人對局</span><span class="d">和朋友對戰</span></button>
+      </div>
+    </div>
+    <div id="menuTwo" class="hidden">
+      <h2 style="margin-bottom:14px">雙人對局</h2>
+      <div class="menu-options">
+        <button class="menu-opt" id="optLocal"><span class="t">本機對戰</span><span class="d">同一台裝置，黑白輪流下</span></button>
+        <button class="menu-opt" id="optRoom"><span class="t">好友房間</span><span class="d">線上遠端對戰，用房間代碼配對</span></button>
+      </div>
+    </div>
+    <div id="menuRoom" class="hidden">
+      <h2 style="margin-bottom:14px">好友房間</h2>
+      <div class="menu-options">
+        <button class="menu-opt" id="optCreate"><span class="t">建立房間</span><span class="d">產生房間代碼，傳給朋友</span></button>
+        <button class="menu-opt" id="optEnter"><span class="t">輸入代碼</span><span class="d">加入朋友建立的房間</span></button>
+      </div>
+      <label class="renju-toggle" style="margin-top:14px">
+        <input type="checkbox" id="roomRenju" checked>
+        <span>建立的房間使用標準連珠禁手</span>
+      </label>
+    </div>
+    <div id="menuEnter" class="hidden">
+      <h2 style="margin-bottom:14px">輸入房間代碼</h2>
+      <div class="code-row">
+        <input id="codeInput" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC234" aria-label="房間代碼">
+        <button class="btn" id="btnJoin">進入房間</button>
+      </div>
+    </div>
+    <div class="menu-msg" id="menuMsg" role="status"></div>
+    <button class="btn secondary menu-back hidden" id="btnMenuBack">‹ 上一步</button>
+  </section>
+
+  <section class="stage hidden" id="stage">
+    <div class="board-card">
+      <div class="board-canvas-holder"><canvas id="board" width="900" height="900"></canvas></div>
+
+      <div class="status-row">
+        <span class="turn-pill" id="turnPill"><span class="stone-dot b"></span>輪到你（黑棋）</span>
+        <span class="thinking hidden" id="thinking"><span class="spinner"></span>白棋思考中…</span>
+        <button class="btn secondary" id="btnUndo" title="悔棋（一局限一次）">↺ 悔棋</button>
+      </div>
+
+      <div id="forbiddenMsg" class="forbidden-msg hidden"></div>
+
+      <div id="endgamePanel" class="endgame hidden">
+        <div class="headline" id="endgameHeadline"></div>
+        <div class="actions">
+          <button class="btn" id="btnReplay">復盤這局</button>
+          <button class="btn secondary" id="btnAnalyze">AI 復盤</button>
+          <button class="btn secondary" id="btnNewFromEnd">再來一場</button>
+        </div>
+        <div id="analyzeProgress" class="analyze-progress hidden">
+          <span class="spinner"></span>
+          <span id="analyzeProgressText">分析中…</span>
+        </div>
+        <div id="analyzeResultBox" class="analyze-result hidden"></div>
+      </div>
+
+      <div class="replay-controls hidden" id="replayControls">
+        <button class="btn secondary" id="btnRStart" title="回到開局">⏮</button>
+        <button class="btn secondary" id="btnRPrev" title="上一手">‹</button>
+        <input type="range" id="rSlider" min="0" max="0" value="0" step="1">
+        <button class="btn secondary" id="btnRNext" title="下一手">›</button>
+        <button class="btn secondary" id="btnREnd" title="跳到結局">⏭</button>
+        <span class="readout" id="rReadout"></span>
+        <button class="btn" id="btnExitReplay">結束復盤 / 再來一場</button>
+      </div>
+    </div>
+
+    <div class="side-panel">
+      <div id="roomBox" class="room-box hidden">
+        <div style="font-size:13px;color:var(--ink-soft)">房間代碼</div>
+        <div class="room-code" id="roomCode"></div>
+        <div class="stat-row"><span>你執</span><strong id="roomYou">—</strong></div>
+        <div class="stat-row"><span>對手</span><strong id="roomOpp">—</strong></div>
+        <button class="btn secondary" id="btnCopyLink">複製邀請連結</button>
+      </div>
+      <label class="renju-toggle">
+        <input type="checkbox" id="renjuToggle" checked>
+        <span>標準連珠禁手（限制黑棋）</span>
+      </label>
+      <div>
+        <h3 style="margin-bottom:8px">對局狀態</h3>
+        <div class="stat-row"><span>已下手數</span><strong id="statMoves">0</strong></div>
+        <div class="stat-row" id="statElapsedRow"><span>白棋上手思考</span><strong id="statElapsed">—</strong></div>
+        <div class="stat-row"><span>模式</span><strong id="statMode">對弈中</strong></div>
+      </div>
+      <button class="btn secondary" id="btnNewGame">重新開局</button>
+      <button class="btn secondary" id="btnToMenu">回主選單</button>
+      <div>
+        <h3 style="margin-bottom:8px">棋譜</h3>
+        <div class="movelist-mini" id="movelistMini"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>座標：欄 A–O，列 1–15（列 1 在下、列 15 在上）。引擎在瀏覽器 Web Worker 中運算，不會卡住畫面。每局結束後會匿名記錄棋譜（不含任何個人資料），用來分析並改進 AI 引擎。</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ============================================================
+  // Engine source (runs inside a Web Worker, built as a Blob so the
+  // whole page stays a single self-contained file)
+  // ============================================================
+  var ENGINE_SRC = String.raw`
+    var SIZE = 15;
+    var DIRS = [[0,1],[1,0],[1,1],[1,-1]];
+    var WIN_SCORE = 10000000;
+
+    function inBounds(r,c){ return r>=0 && r<SIZE && c>=0 && c<SIZE; }
+    function checkWin(board,r,c,player){
+      for (var d=0; d<DIRS.length; d++){
+        var dx=DIRS[d][0], dy=DIRS[d][1];
+        var cnt=1;
+        for (var s=0;s<2;s++){
+          var sign = s===0?1:-1;
+          var rr=r+dx*sign, cc=c+dy*sign;
+          while (inBounds(rr,cc) && board[rr][cc]===player){ cnt++; rr+=dx*sign; cc+=dy*sign; }
+        }
+        if (cnt>=5) return true;
+      }
+      return false;
+    }
+
+    // ---------- Renju forbidden moves (Black only) ----------
+    // overline (6+), double-four (44), double-three (33). A move that
+    // wins outright (an exact five) is never forbidden, even if it also
+    // reads as an overline/44/33 in some other direction.
+
+    function runInfo(board, r, c, player, dx, dy){
+      var cnt=1, rr=r+dx, cc=c+dy;
+      while (inBounds(rr,cc) && board[rr][cc]===player){ cnt++; rr+=dx; cc+=dy; }
+      var endNext=[rr,cc];
+      var rr2=r-dx, cc2=c-dy;
+      while (inBounds(rr2,cc2) && board[rr2][cc2]===player){ cnt++; rr2-=dx; cc2-=dy; }
+      var startPrev=[rr2,cc2];
+      return [cnt, startPrev, endNext];
+    }
+
+    function isOpen(board, pos){
+      var r=pos[0], c=pos[1];
+      return inBounds(r,c) && board[r][c]==='.';
+    }
+
+    function completesToFiveNotOverline(board, pos, player, dx, dy){
+      var r=pos[0], c=pos[1];
+      board[r][c]=player;
+      var info = runInfo(board,r,c,player,dx,dy);
+      board[r][c]='.';
+      return info[0]===5;
+    }
+
+    function directionHasRealFour(board, r, c, player, dx, dy){
+      var info = runInfo(board,r,c,player,dx,dy);
+      var cnt=info[0], startPrev=info[1], endNext=info[2];
+      if (cnt!==4) return false;
+      var ends=[startPrev,endNext];
+      for (var i=0;i<2;i++){
+        var pos=ends[i];
+        if (isOpen(board,pos) && completesToFiveNotOverline(board,pos,player,dx,dy)) return true;
+      }
+      return false;
+    }
+
+    function directionHasRealThree(board, r, c, player, dx, dy){
+      var info = runInfo(board,r,c,player,dx,dy);
+      var cnt=info[0], startPrev=info[1], endNext=info[2];
+      if (cnt!==3) return false;
+      if (!(isOpen(board,startPrev) && isOpen(board,endNext))) return false;
+      var ends=[startPrev,endNext];
+      for (var i=0;i<2;i++){
+        var pr=ends[i][0], pc=ends[i][1];
+        board[pr][pc]=player;
+        var hasFour = directionHasRealFour(board,pr,pc,player,dx,dy);
+        board[pr][pc]='.';
+        if (hasFour) return true;
+      }
+      return false;
+    }
+
+    function classifyBlackMove(board, r, c){
+      var player='B';
+      board[r][c]=player;
+      var result;
+      try {
+        for (var d=0; d<DIRS.length; d++){
+          var cnt = runInfo(board,r,c,player,DIRS[d][0],DIRS[d][1])[0];
+          if (cnt===5){ result='win'; return result; }
+        }
+        for (var d2=0; d2<DIRS.length; d2++){
+          var cnt2 = runInfo(board,r,c,player,DIRS[d2][0],DIRS[d2][1])[0];
+          if (cnt2>=6){ result='overline'; return result; }
+        }
+        var fourCount=0;
+        for (var d3=0; d3<DIRS.length; d3++){
+          if (directionHasRealFour(board,r,c,player,DIRS[d3][0],DIRS[d3][1])) fourCount++;
+        }
+        if (fourCount>=2){ result='double-four'; return result; }
+        var threeCount=0;
+        for (var d4=0; d4<DIRS.length; d4++){
+          if (directionHasRealThree(board,r,c,player,DIRS[d4][0],DIRS[d4][1])) threeCount++;
+        }
+        if (threeCount>=2){ result='double-three'; return result; }
+        result=null;
+        return result;
+      } finally {
+        board[r][c]='.';
+      }
+    }
+
+    var TEMPLATES = [
+      ['SSSSS', WIN_SCORE, true],
+      ['ESSSSE', 500000, false],
+      ['XSSSSE', 50000, false],
+      ['ESSSSX', 50000, false],
+      ['SSSES', 45000, false],
+      ['SSESS', 45000, false],
+      ['SESSS', 45000, false],
+      ['ESSSE', 5000, false],
+      ['ESSESE', 3000, false],
+      ['ESESSE', 3000, false],
+      ['XSSSE', 500, false],
+      ['ESSSX', 500, false],
+      ['ESSE', 150, false],
+      ['ESESE', 100, false]
+    ];
+
+    // player is always the single safe letter 'B' or 'W' (no regex-special
+    // characters), so no general-purpose escaping is needed for it. BSLASH
+    // is built from a char code, not a string literal, to avoid any
+    // backslash-escaping ambiguity from nesting this source inside the
+    // outer page's template literal.
+    var BSLASH = String.fromCharCode(92);
+
+    var compiledCache = {};
+    function compiledPattern(template, player){
+      var key = template+'|'+player;
+      if (compiledCache[key]) return compiledCache[key];
+      var body = '';
+      for (var i=0;i<template.length;i++){
+        var ch = template[i];
+        if (ch==='S') body += player;
+        else if (ch==='E') body += BSLASH + '.';
+        else if (ch==='X') body += '[^.'+player+']';
+        else body += ch;
+      }
+      var re = new RegExp('(?='+body+')', 'g');
+      compiledCache[key]=re;
+      return re;
+    }
+
+    function scoreLineForPlayer(line, player){
+      var padded = '#'+line+'#';
+      var total = 0;
+      for (var t=0;t<TEMPLATES.length;t++){
+        var template=TEMPLATES[t][0], score=TEMPLATES[t][1], isFive=TEMPLATES[t][2];
+        var re = compiledPattern(template, player);
+        re.lastIndex = 0;
+        var cnt = 0;
+        while (re.exec(padded) !== null){ cnt++; re.lastIndex++; }
+        if (cnt){ if (isFive) return WIN_SCORE; total += cnt*score; }
+      }
+      return total;
+    }
+
+    function getAllLines(board){
+      var lines=[];
+      for (var r=0;r<SIZE;r++) lines.push(board[r].join(''));
+      for (var c=0;c<SIZE;c++){ var s=''; for(var r2=0;r2<SIZE;r2++) s+=board[r2][c]; lines.push(s); }
+      for (var d=-(SIZE-1); d<SIZE; d++){
+        var s2=''; for (var r3=0;r3<SIZE;r3++){ var cc=r3-d; if (inBounds(r3,cc)) s2+=board[r3][cc]; }
+        if (s2.length>=5) lines.push(s2);
+      }
+      for (var d2=0; d2<2*SIZE-1; d2++){
+        var s3=''; for (var r4=0;r4<SIZE;r4++){ var cc2=d2-r4; if (inBounds(r4,cc2)) s3+=board[r4][cc2]; }
+        if (s3.length>=5) lines.push(s3);
+      }
+      return lines;
+    }
+
+    function evaluateBoard(board, player, opponent){
+      var lines = getAllLines(board);
+      var my=0, opp=0;
+      for (var i=0;i<lines.length;i++){
+        var s1 = scoreLineForPlayer(lines[i], player);
+        if (s1===WIN_SCORE) return WIN_SCORE;
+        my += s1;
+        var s2 = scoreLineForPlayer(lines[i], opponent);
+        if (s2===WIN_SCORE) return -WIN_SCORE;
+        opp += s2;
+      }
+      return my - Math.floor(opp*1.05);
+    }
+
+    function getCandidates(board, radius){
+      radius = radius===undefined?2:radius;
+      var occupied=[];
+      for (var r=0;r<SIZE;r++) for (var c=0;c<SIZE;c++) if (board[r][c]!=='.') occupied.push([r,c]);
+      if (occupied.length===0) return [[Math.floor(SIZE/2), Math.floor(SIZE/2)]];
+      var seen = {};
+      var result=[];
+      for (var i=0;i<occupied.length;i++){
+        var r0=occupied[i][0], c0=occupied[i][1];
+        for (var dr=-radius; dr<=radius; dr++) for (var dc=-radius; dc<=radius; dc++){
+          var rr=r0+dr, cc=c0+dc;
+          if (inBounds(rr,cc) && board[rr][cc]==='.'){
+            var key = rr*SIZE+cc;
+            if (!seen[key]){ seen[key]=true; result.push([rr,cc]); }
+          }
+        }
+      }
+      return result;
+    }
+
+    function getLocalEmptyCells(board, r, c, radius){
+      radius = radius===undefined?4:radius;
+      var result=[];
+      for (var dr=-radius; dr<=radius; dr++) for (var dc=-radius; dc<=radius; dc++){
+        var rr=r+dr, cc=c+dc;
+        if (inBounds(rr,cc) && board[rr][cc]==='.') result.push([rr,cc]);
+      }
+      return result;
+    }
+
+    function findImmediateWins(board, player, candidates){
+      if (!candidates) candidates = getCandidates(board);
+      var wins=[];
+      for (var i=0;i<candidates.length;i++){
+        var r=candidates[i][0], c=candidates[i][1];
+        board[r][c]=player;
+        var won = checkWin(board,r,c,player);
+        board[r][c]='.';
+        if (won) wins.push([r,c]);
+      }
+      return wins;
+    }
+
+    function orderMoves(board, candidates, cur, other, topN, renju){
+      topN = topN===undefined?14:topN;
+      var winMoves=[], scored=[];
+      for (var i=0;i<candidates.length;i++){
+        var r=candidates[i][0], c=candidates[i][1];
+        if (renju && cur==='B'){
+          var status = classifyBlackMove(board,r,c);
+          if (status!==null && status!=='win') continue;
+        }
+        board[r][c]=cur;
+        if (checkWin(board,r,c,cur)){ winMoves.push([r,c]); board[r][c]='.'; continue; }
+        var s = evaluateBoard(board,cur,other);
+        board[r][c]='.';
+        scored.push([s,[r,c]]);
+      }
+      scored.sort(function(a,b){ return b[0]-a[0]; });
+      var rest = scored.map(function(x){ return x[1]; });
+      var remaining = Math.max(0, topN-winMoves.length);
+      return winMoves.concat(rest.slice(0,remaining));
+    }
+
+    function SearchTimeout(){}
+    SearchTimeout.prototype = Object.create(Error.prototype);
+
+    function checkTime(start, limitSec){
+      if (Date.now()-start > limitSec*1000) throw new SearchTimeout();
+    }
+
+    function minimax(board, depth, alpha, beta, maximizing, player, opponent, start, limit, renju){
+      checkTime(start, limit);
+      var candidates = getCandidates(board);
+      if (depth===0 || candidates.length===0) return [evaluateBoard(board,player,opponent), null];
+      var cur = maximizing?player:opponent;
+      var other = maximizing?opponent:player;
+      var ordered = orderMoves(board, candidates, cur, other, 14, renju);
+      if (ordered.length===0) return [evaluateBoard(board,player,opponent), null];
+
+      var bestLocal = ordered[0];
+      if (maximizing){
+        var value=-Infinity;
+        for (var i=0;i<ordered.length;i++){
+          var r=ordered[i][0], c=ordered[i][1];
+          board[r][c]=player;
+          var v, won=false;
+          try {
+            if (checkWin(board,r,c,player)) won=true;
+            else v = minimax(board, depth-1, alpha, beta, false, player, opponent, start, limit, renju)[0];
+          } finally { board[r][c]='.'; }
+          if (won){ value = WIN_SCORE-(20-depth); bestLocal=[r,c]; break; }
+          if (v>value){ value=v; bestLocal=[r,c]; }
+          alpha = Math.max(alpha,value);
+          if (alpha>=beta) break;
+        }
+        return [value, bestLocal];
+      } else {
+        var value2=Infinity;
+        for (var j=0;j<ordered.length;j++){
+          var r2=ordered[j][0], c2=ordered[j][1];
+          board[r2][c2]=opponent;
+          var v2, won2=false;
+          try {
+            if (checkWin(board,r2,c2,opponent)) won2=true;
+            else v2 = minimax(board, depth-1, alpha, beta, true, player, opponent, start, limit, renju)[0];
+          } finally { board[r2][c2]='.'; }
+          if (won2){ value2 = -WIN_SCORE+(20-depth); bestLocal=[r2,c2]; break; }
+          if (v2<value2){ value2=v2; bestLocal=[r2,c2]; }
+          beta = Math.min(beta,value2);
+          if (alpha>=beta) break;
+        }
+        return [value2, bestLocal];
+      }
+    }
+
+    function getFourCreatingMoves(board, player, candidates, renju){
+      if (!candidates) candidates = getCandidates(board);
+      var result=[];
+      for (var i=0;i<candidates.length;i++){
+        var r=candidates[i][0], c=candidates[i][1];
+        if (renju && player==='B'){
+          var status = classifyBlackMove(board,r,c);
+          if (status!==null && status!=='win') continue;
+        }
+        board[r][c]=player;
+        var wins = findImmediateWins(board, player, getLocalEmptyCells(board,r,c));
+        board[r][c]='.';
+        if (wins.length) result.push([[r,c], wins]);
+      }
+      return result;
+    }
+
+    function getThreeCreatingMoves(board, player, opponent, candidates, maxResults, renju){
+      if (!candidates) candidates = getCandidates(board);
+      maxResults = maxResults===undefined?8:maxResults;
+      var already = {};
+      var fours = getFourCreatingMoves(board, player, candidates, renju);
+      for (var i=0;i<fours.length;i++){ var mv=fours[i][0]; already[mv[0]*SIZE+mv[1]]=true; }
+      var result=[];
+      for (var k=0;k<candidates.length;k++){
+        var r=candidates[k][0], c=candidates[k][1];
+        if (already[r*SIZE+c]) continue;
+        if (renju && player==='B'){
+          var status2 = classifyBlackMove(board,r,c);
+          if (status2!==null && status2!=='win') continue;
+        }
+        board[r][c]=player;
+        try {
+          if (checkWin(board,r,c,player)) continue;
+          var localCands = getLocalEmptyCells(board,r,c,3);
+          var followUps = getFourCreatingMoves(board, player, localCands, renju);
+          if (followUps.length>=2){
+            if (findImmediateWins(board, opponent, getLocalEmptyCells(board,r,c)).length) continue;
+            var squares = followUps.map(function(x){ return x[0]; });
+            result.push([[r,c], squares]);
+          }
+        } finally { board[r][c]='.'; }
+      }
+      result.sort(function(a,b){ return b[1].length-a[1].length; });
+      return result.slice(0,maxResults);
+    }
+
+    function vcfSearch(board, player, opponent, depthLimit, start, limit, renju){
+      checkTime(start, limit);
+      if (depthLimit<=0) return null;
+      var moves = getFourCreatingMoves(board, player, null, renju);
+      for (var i=0;i<moves.length;i++){
+        var r=moves[i][0][0], c=moves[i][0][1], wins=moves[i][1];
+        board[r][c]=player;
+        try {
+          if (findImmediateWins(board, opponent).length) continue;
+          if (wins.length>=2) return [[r,c]];
+          var br=wins[0][0], bc=wins[0][1];
+          if (renju && opponent==='B'){
+            var status = classifyBlackMove(board,br,bc);
+            if (status!==null && status!=='win'){
+              // Black's only defense is itself a forbidden move -- they
+              // have no legal way to block this four, automatic win.
+              return [[r,c]];
+            }
+          }
+          board[br][bc]=opponent;
+          try {
+            if (checkWin(board,br,bc,opponent)) continue;
+            var sub = vcfSearch(board, player, opponent, depthLimit-1, start, limit, renju);
+            if (sub!==null) return [[r,c],[br,bc]].concat(sub);
+          } finally { board[br][bc]='.'; }
+        } finally { board[r][c]='.'; }
+      }
+      return null;
+    }
+
+    function vctSearch(board, player, opponent, depthLimit, start, limit, renju){
+      checkTime(start, limit);
+      var vcfResult = vcfSearch(board, player, opponent, depthLimit, start, limit, renju);
+      if (vcfResult) return vcfResult;
+      if (depthLimit<=0) return null;
+      var threeMoves = getThreeCreatingMoves(board, player, opponent, null, 8, renju);
+      for (var i=0;i<threeMoves.length;i++){
+        var r=threeMoves[i][0][0], c=threeMoves[i][0][1], followUps=threeMoves[i][1];
+        board[r][c]=player;
+        try {
+          var allSucceed = followUps.length>0;
+          for (var j=0;j<followUps.length;j++){
+            checkTime(start, limit);
+            var dr=followUps[j][0], dc=followUps[j][1];
+            if (renju && opponent==='B'){
+              var status2 = classifyBlackMove(board,dr,dc);
+              if (status2!==null && status2!=='win') continue; // illegal defense, skip it
+            }
+            board[dr][dc]=opponent;
+            var sub;
+            try {
+              if (checkWin(board,dr,dc,opponent)){ allSucceed=false; board[dr][dc]='.'; break; }
+              sub = vctSearch(board, player, opponent, depthLimit-1, start, limit, renju);
+            } finally { board[dr][dc]='.'; }
+            if (sub===null){ allSucceed=false; break; }
+          }
+          if (allSucceed) return [[r,c]];
+        } finally { board[r][c]='.'; }
+      }
+      return null;
+    }
+
+    function bestMove(board, player, opponent, opts){
+      opts = opts || {};
+      var depth=opts.depth||8, timeLimit=opts.timeLimit||10, vcfDepth=opts.vcfDepth||30,
+          vcfTime=opts.vcfTime||4, vctDepth=opts.vctDepth||8, vctTime=opts.vctTime||3,
+          defenseCheckN=opts.defenseCheckN||20, renju=!!opts.renju;
+
+      var wins = findImmediateWins(board, player);
+      if (wins.length) return [wins[0], WIN_SCORE];
+
+      var vcfStart = Date.now();
+      var seq = null;
+      try { seq = vcfSearch(board, player, opponent, vcfDepth, vcfStart, vcfTime, renju); } catch(e){ if(!(e instanceof SearchTimeout)) throw e; }
+      if (seq) return [seq[0], WIN_SCORE];
+      try { seq = vctSearch(board, player, opponent, vctDepth, Date.now(), vctTime, renju); } catch(e){ if(!(e instanceof SearchTimeout)) throw e; }
+      if (seq) return [seq[0], WIN_SCORE];
+
+      var start = Date.now();
+      var candidates = getCandidates(board);
+      var orderedCandidates = orderMoves(board, candidates, player, opponent, candidates.length, renju);
+      var safeCandidates=[];
+      var checkBudget = Math.max(2.0, timeLimit*0.6);
+      for (var i=0;i<orderedCandidates.length;i++){
+        if ((Date.now()-start)/1000 > checkBudget) break;
+        var r=orderedCandidates[i][0], c=orderedCandidates[i][1];
+        board[r][c]=player;
+        if (findImmediateWins(board,opponent).length){ board[r][c]='.'; continue; }
+        var oppSeq=null;
+        try {
+          if (i<defenseCheckN) oppSeq = vctSearch(board, opponent, player, Math.min(vctDepth,6), Date.now(), Math.min(1.5, checkBudget), renju);
+          else oppSeq = vcfSearch(board, opponent, player, Math.min(vcfDepth,16), Date.now(), 1.2, renju);
+        } catch(e){ if(!(e instanceof SearchTimeout)) throw e; oppSeq=null; }
+        board[r][c]='.';
+        if (!oppSeq) safeCandidates.push([r,c]);
+      }
+
+      var rootCandidates = safeCandidates.length? safeCandidates : candidates;
+      var remaining = Math.max(1.0, timeLimit - (Date.now()-vcfStart)/1000);
+      var mmStart = Date.now();
+      var best=null, bestVal=null, d=2;
+      while (d<=depth){
+        try {
+          var orderedRoot = orderMoves(board, rootCandidates, player, opponent, rootCandidates.length, renju);
+          var value=-Infinity, localBest=orderedRoot[0], alpha=-Infinity, beta=Infinity;
+          for (var k=0;k<orderedRoot.length;k++){
+            var r2=orderedRoot[k][0], c2=orderedRoot[k][1];
+            board[r2][c2]=player;
+            var v, won=false;
+            try {
+              if (checkWin(board,r2,c2,player)) won=true;
+              else v = minimax(board, d-1, alpha, beta, false, player, opponent, mmStart, remaining, renju)[0];
+            } finally { board[r2][c2]='.'; }
+            if (won){ value=WIN_SCORE-(20-d); localBest=[r2,c2]; break; }
+            if (v>value){ value=v; localBest=[r2,c2]; }
+            alpha=Math.max(alpha,value);
+          }
+          best=localBest; bestVal=value;
+          if (Math.abs(value)>=WIN_SCORE-1000) break;
+        } catch(e){
+          if (e instanceof SearchTimeout) break;
+          throw e;
+        }
+        d++;
+      }
+      if (best===null){ best = rootCandidates.length?rootCandidates[0]:null; bestVal=0; }
+      return [best, bestVal];
+    }
+
+    // ---------- post-game review ----------
+
+    function hasForcedWin(board, player, opponent, vcfDepth, vcfTime, vctDepth, vctTime, renju){
+      try { if (vcfSearch(board, player, opponent, vcfDepth, Date.now(), vcfTime, renju)) return true; }
+      catch(e){ if(!(e instanceof SearchTimeout)) throw e; }
+      try { if (vctSearch(board, player, opponent, vctDepth, Date.now(), vctTime, renju)) return true; }
+      catch(e){ if(!(e instanceof SearchTimeout)) throw e; }
+      return false;
+    }
+
+    // movesFlat: array of [color, r, c]. winner: 'B'/'W'.
+    function analyzeGame(movesFlat, winner, renju, progressCb){
+      var loser = winner==='B' ? 'W' : 'B';
+      var board = []; for (var bi=0; bi<SIZE; bi++) board.push(new Array(SIZE).fill('.'));
+      var turningPoint = null;
+      var total = movesFlat.length;
+
+      for (var i=0;i<total;i++){
+        var mv = movesFlat[i];
+        var color=mv[0], r=mv[1], c=mv[2];
+        board[r][c]=color;
+        if (progressCb) progressCb(i+1, total);
+        if (color===loser && (i+1)<total){
+          if (hasForcedWin(board, winner, loser, 20, 2.5, 6, 2.5, renju)){
+            turningPoint = i+1;
+            break;
+          }
+        }
+      }
+
+      var result = { turningPoint: turningPoint, actualMove: turningPoint?movesFlat[turningPoint-1]:null,
+                     safeAlternatives: [], checked: 0, scannedMoves: turningPoint||total };
+      if (turningPoint===null) return result;
+
+      var boardBefore = []; for (var bj=0; bj<SIZE; bj++) boardBefore.push(new Array(SIZE).fill('.'));
+      for (var k=0;k<turningPoint-1;k++){ var m=movesFlat[k]; boardBefore[m[1]][m[2]]=m[0]; }
+      var candidates = getCandidates(boardBefore);
+      var ordered = orderMoves(boardBefore, candidates, loser, winner, candidates.length, renju);
+      var safe=[], checked=0;
+      for (var oi=0; oi<ordered.length; oi++){
+        if (checked>=16) break;
+        var rr=ordered[oi][0], cc=ordered[oi][1];
+        if (renju && loser==='B'){
+          var status = classifyBlackMove(boardBefore, rr, cc);
+          if (status!==null && status!=='win') continue;
+        }
+        checked++;
+        boardBefore[rr][cc]=loser;
+        var hasWin = findImmediateWins(boardBefore, winner).length>0;
+        var forced = hasWin || hasForcedWin(boardBefore, winner, loser, 20, 3, 6, 4, renju);
+        boardBefore[rr][cc]='.';
+        if (!forced) safe.push([rr,cc]);
+      }
+      result.safeAlternatives = safe;
+      result.checked = checked;
+      return result;
+    }
+
+    self.onmessage = function(e){
+      if (e.data.type === 'analyze'){
+        var res = analyzeGame(e.data.movesFlat, e.data.winner, e.data.renju, function(i, total){
+          self.postMessage({ type: 'analyzeProgress', i: i, total: total });
+        });
+        self.postMessage({ type: 'analyzeResult', result: res });
+        return;
+      }
+      var board = e.data.board, player = e.data.player, opponent = e.data.opponent, opts = e.data.opts;
+      var t0 = Date.now();
+      var result = bestMove(board, player, opponent, opts);
+      self.postMessage({ type: 'moveResult', move: result[0], score: result[1], elapsed: (Date.now()-t0)/1000 });
+    };
+  `;
+
+  var workerBlob = new Blob([ENGINE_SRC], { type: "application/javascript" });
+  var worker = new Worker(URL.createObjectURL(workerBlob));
+
+  // ============================================================
+  // Board drawing (shared by play + replay)
+  // ============================================================
+  var COLS = "ABCDEFGHIJKLMNO";
+  var SIZE = 15;
+  var STARS = [["D",4],["L",4],["H",8],["D",12],["L",12]];
+
+  function colIndex(letter) { return COLS.indexOf(letter); }
+  function rowFromTop(rowNum) { return SIZE - rowNum; }
+  function coordStr(r, c) { return COLS[c] + String(SIZE - r); }
+
+  // ============================================================
+  // Renju forbidden-move classifier -- a plain main-thread copy (not the
+  // worker) so a click can be validated instantly, with no round-trip.
+  // Logic must stay identical to the worker's copy inside ENGINE_SRC.
+  // ============================================================
+  var RENJU_DIRS = [[0,1],[1,0],[1,1],[1,-1]];
+  function rjInBounds(r,c){ return r>=0 && r<SIZE && c>=0 && c<SIZE; }
+
+  function rjRunInfo(board, r, c, player, dx, dy){
+    var cnt=1, rr=r+dx, cc=c+dy;
+    while (rjInBounds(rr,cc) && board[rr][cc]===player){ cnt++; rr+=dx; cc+=dy; }
+    var endNext=[rr,cc];
+    var rr2=r-dx, cc2=c-dy;
+    while (rjInBounds(rr2,cc2) && board[rr2][cc2]===player){ cnt++; rr2-=dx; cc2-=dy; }
+    var startPrev=[rr2,cc2];
+    return [cnt, startPrev, endNext];
+  }
+  function rjIsOpen(board, pos){ var r=pos[0], c=pos[1]; return rjInBounds(r,c) && board[r][c]==='.'; }
+  function rjCompletesToFive(board, pos, player, dx, dy){
+    var r=pos[0], c=pos[1];
+    board[r][c]=player;
+    var info = rjRunInfo(board,r,c,player,dx,dy);
+    board[r][c]='.';
+    return info[0]===5;
+  }
+  function rjHasRealFour(board, r, c, player, dx, dy){
+    var info = rjRunInfo(board,r,c,player,dx,dy);
+    if (info[0]!==4) return false;
+    var ends=[info[1],info[2]];
+    for (var i=0;i<2;i++){
+      if (rjIsOpen(board,ends[i]) && rjCompletesToFive(board,ends[i],player,dx,dy)) return true;
+    }
+    return false;
+  }
+  function rjHasRealThree(board, r, c, player, dx, dy){
+    var info = rjRunInfo(board,r,c,player,dx,dy);
+    if (info[0]!==3) return false;
+    if (!(rjIsOpen(board,info[1]) && rjIsOpen(board,info[2]))) return false;
+    var ends=[info[1],info[2]];
+    for (var i=0;i<2;i++){
+      var pr=ends[i][0], pc=ends[i][1];
+      board[pr][pc]=player;
+      var hasFour = rjHasRealFour(board,pr,pc,player,dx,dy);
+      board[pr][pc]='.';
+      if (hasFour) return true;
+    }
+    return false;
+  }
+  function classifyBlackMoveMain(board, r, c){
+    var player='B';
+    board[r][c]=player;
+    try {
+      for (var d=0; d<RENJU_DIRS.length; d++){
+        if (rjRunInfo(board,r,c,player,RENJU_DIRS[d][0],RENJU_DIRS[d][1])[0]===5) return 'win';
+      }
+      for (var d2=0; d2<RENJU_DIRS.length; d2++){
+        if (rjRunInfo(board,r,c,player,RENJU_DIRS[d2][0],RENJU_DIRS[d2][1])[0]>=6) return 'overline';
+      }
+      var fourCount=0;
+      for (var d3=0; d3<RENJU_DIRS.length; d3++){
+        if (rjHasRealFour(board,r,c,player,RENJU_DIRS[d3][0],RENJU_DIRS[d3][1])) fourCount++;
+      }
+      if (fourCount>=2) return 'double-four';
+      var threeCount=0;
+      for (var d4=0; d4<RENJU_DIRS.length; d4++){
+        if (rjHasRealThree(board,r,c,player,RENJU_DIRS[d4][0],RENJU_DIRS[d4][1])) threeCount++;
+      }
+      if (threeCount>=2) return 'double-three';
+      return null;
+    } finally {
+      board[r][c]='.';
+    }
+  }
+  var FORBIDDEN_LABELS_ZH = {
+    'overline': '長連禁（超過五子連線）',
+    'double-four': '四四禁（同時做出兩個四）',
+    'double-three': '三三禁（同時做出兩個活三）'
+  };
+
+  function drawBoard(canvas, stones, opts) {
+    opts = opts || {};
+    var ctx = canvas.getContext("2d");
+    var W = canvas.width, H = canvas.height;
+    var pad = W * 0.075;
+    var inner = W - pad * 2;
+    var step = inner / (SIZE - 1);
+    ctx.clearRect(0, 0, W, H);
+
+    var grad = ctx.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, "#e0b968");
+    grad.addColorStop(1, "#c99a44");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // r,c here are 0-indexed board indices (row 0 = display row 15)
+    function pxFromRC0(r, c) { return [pad + c * step, pad + r * step]; }
+
+    ctx.strokeStyle = "rgba(75,45,20,0.75)";
+    ctx.lineWidth = Math.max(1, W * 0.0016);
+    for (var i = 0; i < SIZE; i++) {
+      var x = pad + i * step;
+      ctx.beginPath(); ctx.moveTo(x, pad); ctx.lineTo(x, H - pad); ctx.stroke();
+      var y = pad + i * step;
+      ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+    }
+
+    ctx.fillStyle = "rgba(75,45,20,0.85)";
+    STARS.forEach(function (s) {
+      var ci = colIndex(s[0]), ri = rowFromTop(s[1]);
+      var p = pxFromRC0(ri, ci);
+      ctx.beginPath(); ctx.arc(p[0], p[1], step * 0.07, 0, Math.PI * 2); ctx.fill();
+    });
+
+    ctx.fillStyle = "rgba(60,38,16,0.9)";
+    ctx.font = (step * 0.34) + "px 'Noto Sans TC', sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (var ci2 = 0; ci2 < SIZE; ci2++) ctx.fillText(COLS[ci2], pad + ci2 * step, H - pad * 0.42);
+    ctx.textAlign = "right";
+    for (var rn = 1; rn <= SIZE; rn++) ctx.fillText(String(rn), W - pad * 0.28, pad + rowFromTop(rn) * step);
+
+    var stoneR = step * 0.44;
+    stones.forEach(function (mv) {
+      // mv: {n, color:'B'/'W', r, c} where r,c are 0-indexed board coords (row0=display15)
+      var p = pxFromRC0(mv.r, mv.c);
+      var isBlack = mv.color === "B";
+      var isCurrent = opts.currentNum === mv.n;
+      var isLast = opts.lastMoveOnly && mv.n === opts.maxN;
+
+      var sg = ctx.createRadialGradient(p[0]-stoneR*0.35, p[1]-stoneR*0.35, stoneR*0.1, p[0], p[1], stoneR);
+      if (isBlack) { sg.addColorStop(0, "#4a4136"); sg.addColorStop(1, "#100d09"); }
+      else { sg.addColorStop(0, "#ffffff"); sg.addColorStop(1, "#e7e0d0"); }
+      ctx.beginPath(); ctx.arc(p[0], p[1], stoneR, 0, Math.PI*2); ctx.fillStyle = sg; ctx.fill();
+      if (!isBlack) { ctx.lineWidth = Math.max(1, step*0.03); ctx.strokeStyle = "rgba(120,105,80,0.7)"; ctx.stroke(); }
+
+      if (isLast) {
+        ctx.beginPath(); ctx.arc(p[0], p[1], stoneR + step*0.10, 0, Math.PI*2);
+        ctx.lineWidth = Math.max(1.5, step*0.05); ctx.strokeStyle = "#b3392c"; ctx.stroke();
+      }
+      if (isCurrent) {
+        ctx.beginPath(); ctx.arc(p[0], p[1], stoneR + step*0.18, 0, Math.PI*2);
+        ctx.lineWidth = Math.max(1.5, step*0.045); ctx.strokeStyle = "rgba(179,57,44,0.55)"; ctx.stroke();
+      }
+
+      if (opts.showNumbers !== false) {
+        ctx.fillStyle = isBlack ? "#f2ece1" : "#221c14";
+        ctx.font = "700 " + (stoneR*0.95) + "px 'Noto Sans TC', sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(String(mv.n), p[0], p[1] + stoneR*0.04);
+      }
+    });
+
+    return { pad: pad, step: step };
+  }
+
+  // ============================================================
+  // Game state
+  // ============================================================
+  // gameType: "ai" (you are Black vs the engine), "local" (two people on
+  // one device), "online" (a friend room synced through GomokuNet).
+  // view: "menu" | "play" | "replay".
+  var board, moves, gameOver, winner, view, replayIndex, thinking, undoUsed, analyzing;
+  var gameType = "ai";
+  var gameStartedAt = 0;
+  var room = null; // online: { code, myColor, hasOpponent, oppOnline, renju, rematchMine, rematchOpp }
+  var ENGINE_OPTS = { depth: 8, timeLimit: 10, vcfDepth: 30, vcfTime: 4, vctDepth: 8, vctTime: 3, defenseCheckN: 20 };
+
+  function freshBoard() {
+    var b = [];
+    for (var r=0;r<SIZE;r++){ b.push(new Array(SIZE).fill(".")); }
+    return b;
+  }
+
+  function rebuildBoardFromMoves() {
+    board = freshBoard();
+    moves.forEach(function (m) { board[m.r][m.c] = m.color; });
+  }
+
+  function turnColor() { return moves.length % 2 === 0 ? "B" : "W"; }
+  function colorZh(color) { return color === "B" ? "黑棋" : "白棋"; }
+
+  // The worker answers move requests in order; when a game is abandoned
+  // mid-think, its pending reply must be skipped, not played into the next game.
+  var staleEngineReplies = 0;
+  function abandonEngineMove() {
+    if (thinking) staleEngineReplies++;
+    thinking = false;
+  }
+
+  function resetGame() {
+    abandonEngineMove();
+    board = freshBoard();
+    moves = []; // {n, color, r, c}
+    gameOver = false;
+    winner = null;
+    view = "play";
+    thinking = false;
+    undoUsed = false;
+    analyzing = false;
+    gameStartedAt = Date.now();
+    hideForbiddenMsg();
+    hideAnalyzeResult();
+    render();
+  }
+
+  var menuEl = document.getElementById("menu");
+  var stageEl = document.getElementById("stage");
+  var boardCanvas = document.getElementById("board");
+  var turnPill = document.getElementById("turnPill");
+  var thinkingEl = document.getElementById("thinking");
+  var endgamePanel = document.getElementById("endgamePanel");
+  var endgameHeadline = document.getElementById("endgameHeadline");
+  var replayControls = document.getElementById("replayControls");
+  var statMoves = document.getElementById("statMoves");
+  var statElapsed = document.getElementById("statElapsed");
+  var statElapsedRow = document.getElementById("statElapsedRow");
+  var statMode = document.getElementById("statMode");
+  var movelistMini = document.getElementById("movelistMini");
+  var forbiddenMsgEl = document.getElementById("forbiddenMsg");
+  var renjuToggle = document.getElementById("renjuToggle");
+  var renjuEnabled = renjuToggle.checked;
+  var forbiddenMsgTimer = null;
+  var btnUndo = document.getElementById("btnUndo");
+  var btnAnalyze = document.getElementById("btnAnalyze");
+  var btnNewGame = document.getElementById("btnNewGame");
+  var btnNewFromEnd = document.getElementById("btnNewFromEnd");
+  var analyzeProgressEl = document.getElementById("analyzeProgress");
+  var analyzeProgressText = document.getElementById("analyzeProgressText");
+  var analyzeResultBox = document.getElementById("analyzeResultBox");
+  var roomBox = document.getElementById("roomBox");
+
+  function hideAnalyzeResult() {
+    analyzeProgressEl.classList.add("hidden");
+    analyzeResultBox.classList.add("hidden");
+    analyzeResultBox.innerHTML = "";
+  }
+
+  function showForbiddenMsg(text) {
+    forbiddenMsgEl.textContent = text;
+    forbiddenMsgEl.classList.remove("hidden");
+    if (forbiddenMsgTimer) clearTimeout(forbiddenMsgTimer);
+    forbiddenMsgTimer = setTimeout(function () { forbiddenMsgEl.classList.add("hidden"); }, 3200);
+  }
+  function hideForbiddenMsg() {
+    forbiddenMsgEl.classList.add("hidden");
+    if (forbiddenMsgTimer) { clearTimeout(forbiddenMsgTimer); forbiddenMsgTimer = null; }
+  }
+  renjuToggle.addEventListener("change", function () {
+    renjuEnabled = renjuToggle.checked;
+    hideForbiddenMsg();
+  });
+
+  function stonesUpTo(n) {
+    return moves.slice(0, n).map(function (m) { return { n: m.n, color: m.color, r: m.r, c: m.c }; });
+  }
+
+  // Can the person at this device place a stone right now?
+  function canPlayNow() {
+    if (view !== "play" || gameOver) return false;
+    if (gameType === "ai") return !thinking;
+    if (gameType === "local") return true;
+    return !!room && room.hasOpponent && room.myColor === turnColor();
+  }
+
+  function turnPillHtml() {
+    var t = turnColor(), dot = '<span class="stone-dot ' + (t === "B" ? "b" : "w") + '"></span>';
+    if (gameType === "ai") {
+      return thinking ? '<span class="stone-dot w"></span>白棋思考中' : '<span class="stone-dot b"></span>輪到你（黑棋）';
+    }
+    if (gameType === "local") return dot + "輪到" + colorZh(t);
+    if (!room || !room.hasOpponent) return "等待對手加入房間…";
+    return room.myColor === t ? dot + "輪到你（" + colorZh(t) + "）" : dot + "等對手下（" + colorZh(t) + "）";
+  }
+
+  function endgameText() {
+    if (winner === "D") return "和局（棋盤已下滿）";
+    if (gameType === "ai") return winner === "B" ? "你獲勝了！" : "白棋獲勝";
+    if (gameType === "local") return colorZh(winner) + "獲勝！";
+    return winner === room.myColor ? "你獲勝了！（" + colorZh(winner) + "）" : "對手獲勝（" + colorZh(winner) + "）";
+  }
+  function isHappyEnding() {
+    if (winner === "D") return false;
+    if (gameType === "online") return !!room && winner === room.myColor;
+    return gameType === "local" || winner === "B";
+  }
+
+  function render() {
+    menuEl.classList.toggle("hidden", view !== "menu");
+    stageEl.classList.toggle("hidden", view === "menu");
+    if (view === "menu") return;
+
+    var online = gameType === "online";
+    roomBox.classList.toggle("hidden", !online);
+    statElapsedRow.classList.toggle("hidden", gameType !== "ai");
+    btnUndo.classList.toggle("hidden", online);
+    btnNewGame.classList.toggle("hidden", online);
+    renjuToggle.disabled = online;
+    if (online && room) {
+      renjuToggle.checked = room.renju;
+      document.getElementById("roomCode").textContent = room.code;
+      document.getElementById("roomYou").textContent = colorZh(room.myColor);
+      document.getElementById("roomOpp").textContent =
+        !room.hasOpponent ? "尚未加入" : (room.oppOnline ? "在線上" : "已離線");
+    }
+
+    if (view === "play") {
+      var visible = stonesUpTo(moves.length);
+      drawBoard(boardCanvas, visible, { lastMoveOnly: true, maxN: moves.length });
+      boardCanvas.className = canPlayNow() ? "clickable" : "locked";
+      turnPill.classList.toggle("hidden", gameOver);
+      if (!gameOver) turnPill.innerHTML = turnPillHtml();
+      thinkingEl.classList.toggle("hidden", !thinking);
+      endgamePanel.classList.toggle("hidden", !gameOver);
+      replayControls.classList.add("hidden");
+      if (gameType === "ai") {
+        btnUndo.disabled = gameOver || thinking || undoUsed || moves.length === 0;
+        btnUndo.textContent = undoUsed ? "↺ 悔棋（已用過）" : "↺ 悔棋";
+        btnUndo.title = "悔棋（一局限一次）";
+      } else {
+        btnUndo.disabled = gameOver || moves.length === 0;
+        btnUndo.textContent = "↺ 悔棋";
+        btnUndo.title = "收回上一手";
+      }
+      if (gameOver) {
+        endgamePanel.classList.toggle("you-win", isHappyEnding());
+        endgameHeadline.textContent = endgameText();
+        if (winner === "D") {
+          btnAnalyze.disabled = true;
+          btnAnalyze.title = "和局沒有勝方，無法分析";
+        } else {
+          btnAnalyze.disabled = analyzing;
+          btnAnalyze.title = "";
+        }
+        if (online && room) {
+          btnNewFromEnd.disabled = room.rematchMine || !room.oppOnline;
+          btnNewFromEnd.textContent = room.rematchMine ? "等對手同意再來一局…"
+            : (room.rematchOpp ? "對手想再來一局，同意" : "再來一場（交換黑白）");
+        } else {
+          btnNewFromEnd.disabled = false;
+          btnNewFromEnd.textContent = "再來一場";
+        }
+      }
+      statMode.textContent = gameType === "ai" ? "對戰 AI" : (gameType === "local" ? "本機雙人" : "線上房間");
+    } else {
+      var stones = stonesUpTo(replayIndex);
+      drawBoard(boardCanvas, stones, { currentNum: replayIndex });
+      boardCanvas.className = "locked";
+      turnPill.classList.add("hidden");
+      thinkingEl.classList.add("hidden");
+      endgamePanel.classList.add("hidden");
+      replayControls.classList.remove("hidden");
+      document.getElementById("rSlider").max = moves.length;
+      document.getElementById("rSlider").value = replayIndex;
+      var readout = document.getElementById("rReadout");
+      if (replayIndex === 0) readout.textContent = "開局";
+      else {
+        var mv = moves[replayIndex - 1];
+        readout.textContent = "第 " + mv.n + " 手 " + (mv.color === "B" ? "黑" : "白") + " " + coordStr(mv.r, mv.c);
+      }
+      document.getElementById("btnExitReplay").textContent = online ? "結束復盤" : "結束復盤 / 再來一場";
+      statMode.textContent = "復盤中";
+    }
+
+    statMoves.textContent = String(moves.length);
+    movelistMini.innerHTML = "";
+    moves.forEach(function (m) {
+      var chip = document.createElement("div");
+      chip.className = "chip" + (m.color === "B" ? " b" : "");
+      chip.textContent = m.n;
+      movelistMini.appendChild(chip);
+    });
+  }
+
+  function endGame(win) {
+    gameOver = true;
+    winner = win;
+    // Online games are logged by whichever client committed the final move
+    // (see onlineMove), so both players don't log the same game twice.
+    if (gameType !== "online") logFinishedGame();
+    render();
+  }
+
+  // `final` (online only) is the committed result straight from the room
+  // transaction: { winner, list: [[r,c],...] }.
+  function logFinishedGame(final) {
+    var list = final ? final.list : moves.map(function (m) { return [m.r, m.c]; });
+    var rec = {
+      mode: gameType,
+      renju: renjuEnabled,
+      winner: final ? final.winner : winner,
+      n: list.length,
+      moves: list.map(function (m) { return coordStr(m[0], m[1]); }).join(","),
+      durationSec: Math.round((Date.now() - gameStartedAt) / 1000),
+      engine: "js-v1"
+    };
+    if (gameType === "ai") { rec.undoUsed = undoUsed; rec.human = "B"; }
+    withNet(function (net) { if (net.available) net.logGame(rec); });
+  }
+
+  function placeMove(color, r, c) {
+    var n = moves.length + 1;
+    board[r][c] = color;
+    moves.push({ n: n, color: color, r: r, c: c });
+  }
+
+  function checkWinOn(b, r, c, color) {
+    var dirs = [[0,1],[1,0],[1,1],[1,-1]];
+    for (var d=0; d<dirs.length; d++) {
+      var dx=dirs[d][0], dy=dirs[d][1], cnt=1;
+      for (var s=0;s<2;s++){
+        var sign = s===0?1:-1;
+        var rr=r+dx*sign, cc=c+dy*sign;
+        while (rr>=0&&rr<SIZE&&cc>=0&&cc<SIZE&&b[rr][cc]===color){ cnt++; rr+=dx*sign; cc+=dy*sign; }
+      }
+      if (cnt>=5) return true;
+    }
+    return false;
+  }
+  function checkWinLocal(r, c, color) { return checkWinOn(board, r, c, color); }
+
+  function isFull(b) {
+    for (var r = 0; r < SIZE; r++)
+      for (var c = 0; c < SIZE; c++)
+        if (b[r][c] === ".") return false;
+    return true;
+  }
+  function isBoardFull() { return isFull(board); }
+
+  function requestEngineMove() {
+    thinking = true;
+    render();
+    var boardCopy = board.map(function (row) { return row.slice(); });
+    var opts = Object.assign({ renju: renjuEnabled }, ENGINE_OPTS);
+    worker.postMessage({ board: boardCopy, player: "W", opponent: "B", opts: opts });
+  }
+
+  worker.onmessage = function (e) {
+    var data = e.data;
+    if (data.type === "analyzeProgress") {
+      analyzeProgressText.textContent = "分析中… 第 " + data.i + " / " + data.total + " 手";
+      return;
+    }
+    if (data.type === "analyzeResult") {
+      analyzing = false;
+      renderAnalyzeResult(data.result);
+      return;
+    }
+    // default: moveResult
+    if (staleEngineReplies > 0) { staleEngineReplies--; return; }
+    if (!thinking || gameType !== "ai") return;
+    thinking = false;
+    var mv = data.move;
+    statElapsed.textContent = data.elapsed.toFixed(1) + "s";
+    if (!mv) { endGame("D"); return; }
+    var r = mv[0], c = mv[1];
+    placeMove("W", r, c);
+    if (checkWinLocal(r, c, "W")) { endGame("W"); return; }
+    if (isBoardFull()) { endGame("D"); return; }
+    render();
+  };
+
+  function renderAnalyzeResult(result) {
+    analyzeProgressEl.classList.add("hidden");
+    analyzeResultBox.classList.remove("hidden");
+    var loserZh = winner === "B" ? "白棋" : "黑棋";
+    var winnerZh = winner === "B" ? "黑棋" : "白棋";
+    if (result.turningPoint === null) {
+      analyzeResultBox.innerHTML =
+        '<div class="ar-title">沒有找到明確的轉折點</div>' +
+        '<div>在目前的搜索深度內，沒有偵測到 ' + loserZh + ' 單一個決定性的錯誤——' +
+        '可能這局一路纏鬥到底，也可能轉折點比搜索深度更深。</div>';
+      return;
+    }
+    var mv = result.actualMove; // [color, r, c]
+    var mvCoord = coordStr(mv[1], mv[2]);
+    var html = '<div class="ar-title">第 ' + result.turningPoint + ' 手（' + loserZh + '下 ' + mvCoord +
+      '）之後，' + winnerZh + ' 就已經有必勝解了。</div>';
+    if (result.safeAlternatives.length) {
+      html += '<div>那一手如果改下（測試了 ' + result.checked + ' 個候選點）：</div>';
+      html += '<div class="ar-alts">' + result.safeAlternatives.map(function (m) {
+        return '<span class="chip2">' + coordStr(m[0], m[1]) + '</span>';
+      }).join('') + '</div>';
+      html += '<div style="font-size:12px;color:var(--ink-soft)">以上這些在目前搜索深度內都沒有讓 ' + winnerZh + ' 找到必勝解。</div>';
+    } else {
+      html += '<div>測試了 ' + result.checked + ' 個候選點，沒有找到能避開的下法——這個位置在那之前可能就已經很難挽回了。</div>';
+    }
+    analyzeResultBox.innerHTML = html;
+  }
+
+  function forbiddenReason(b, r, c, color, renju) {
+    if (!renju || color !== "B") return null;
+    var status = classifyBlackMoveMain(b, r, c);
+    return (status !== null && status !== "win") ? status : null;
+  }
+
+  boardCanvas.addEventListener("click", function (ev) {
+    if (!canPlayNow()) return;
+    var rect = boardCanvas.getBoundingClientRect();
+    var x = (ev.clientX - rect.left) / rect.width * boardCanvas.width;
+    var y = (ev.clientY - rect.top) / rect.height * boardCanvas.height;
+    var pad = boardCanvas.width * 0.075;
+    var step = (boardCanvas.width - pad * 2) / (SIZE - 1);
+    var c = Math.round((x - pad) / step);
+    var r = Math.round((y - pad) / step);
+    if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return;
+    if (board[r][c] !== ".") return;
+
+    var color = gameType === "ai" ? "B" : turnColor();
+    var bad = forbiddenReason(board, r, c, color, renjuEnabled);
+    if (bad) {
+      showForbiddenMsg(coordStr(r, c) + " 是禁手：" + (FORBIDDEN_LABELS_ZH[bad] || bad) + "，不能下這裡。");
+      return;
+    }
+    hideForbiddenMsg();
+
+    if (gameType === "online") { onlineMove(r, c); return; }
+
+    placeMove(color, r, c);
+    if (checkWinLocal(r, c, color)) { endGame(color); return; }
+    if (isBoardFull()) { endGame("D"); return; }
+    render();
+    if (gameType === "ai") requestEngineMove();
+  });
+
+  btnUndo.addEventListener("click", function () {
+    if (view !== "play" || gameOver || moves.length === 0) return;
+    if (gameType === "ai") {
+      if (thinking || undoUsed) return;
+      if (moves.length && moves[moves.length - 1].color === "W") moves.pop();
+      if (moves.length && moves[moves.length - 1].color === "B") moves.pop();
+      undoUsed = true;
+    } else if (gameType === "local") {
+      moves.pop();
+    } else {
+      return;
+    }
+    // renumber remaining moves so display stays contiguous
+    moves.forEach(function (m, idx) { m.n = idx + 1; });
+    rebuildBoardFromMoves();
+    hideForbiddenMsg();
+    render();
+  });
+
+  btnAnalyze.addEventListener("click", function () {
+    if (!gameOver || analyzing || winner === "D") return;
+    analyzing = true;
+    analyzeResultBox.classList.add("hidden");
+    analyzeProgressEl.classList.remove("hidden");
+    analyzeProgressText.textContent = "分析中…";
+    render();
+    var movesFlat = moves.map(function (m) { return [m.color, m.r, m.c]; });
+    worker.postMessage({ type: "analyze", movesFlat: movesFlat, winner: winner, renju: renjuEnabled });
+  });
+
+  btnNewGame.addEventListener("click", function () {
+    if (!gameOver && moves.length > 0) {
+      if (!confirm("目前對局還沒結束，確定要重新開局嗎？")) return;
+    }
+    resetGame();
+  });
+  btnNewFromEnd.addEventListener("click", function () {
+    if (gameType === "online") {
+      withNet(function (net) { net.requestRematch(); });
+      return;
+    }
+    resetGame();
+  });
+  document.getElementById("btnExitReplay").addEventListener("click", function () {
+    if (gameType === "online") { view = "play"; render(); return; }
+    resetGame();
+  });
+
+  document.getElementById("btnReplay").addEventListener("click", function () {
+    view = "replay";
+    replayIndex = moves.length;
+    render();
+  });
+
+  var rSlider = document.getElementById("rSlider");
+  rSlider.addEventListener("input", function () { replayIndex = parseInt(rSlider.value, 10); render(); });
+  document.getElementById("btnRStart").addEventListener("click", function () { replayIndex = 0; render(); });
+  document.getElementById("btnREnd").addEventListener("click", function () { replayIndex = moves.length; render(); });
+  document.getElementById("btnRPrev").addEventListener("click", function () { replayIndex = Math.max(0, replayIndex-1); render(); });
+  document.getElementById("btnRNext").addEventListener("click", function () { replayIndex = Math.min(moves.length, replayIndex+1); render(); });
+
+  // ============================================================
+  // Menu
+  // ============================================================
+  var menuSteps = ["menuMain", "menuTwo", "menuRoom", "menuEnter"];
+  var menuStack = ["menuMain"];
+  var menuMsg = document.getElementById("menuMsg");
+  var codeInput = document.getElementById("codeInput");
+  var btnMenuBack = document.getElementById("btnMenuBack");
+
+  function showMenuStep(step, push) {
+    if (push) menuStack.push(step);
+    menuSteps.forEach(function (id) { document.getElementById(id).classList.toggle("hidden", id !== step); });
+    btnMenuBack.classList.toggle("hidden", menuStack.length <= 1);
+    menuMsg.textContent = "";
+    if (step === "menuEnter") setTimeout(function () { codeInput.focus(); }, 0);
+  }
+
+  function goToMenu() {
+    if (gameType === "online") leaveRoom();
+    abandonEngineMove();
+    view = "menu";
+    menuStack = ["menuMain"];
+    showMenuStep("menuMain", false);
+    render();
+  }
+
+  function startGame(type) {
+    gameType = type;
+    resetGame();
+  }
+
+  document.getElementById("optAI").addEventListener("click", function () { startGame("ai"); });
+  document.getElementById("optTwo").addEventListener("click", function () { showMenuStep("menuTwo", true); });
+  document.getElementById("optLocal").addEventListener("click", function () { startGame("local"); });
+  document.getElementById("optRoom").addEventListener("click", function () { showMenuStep("menuRoom", true); });
+  document.getElementById("optEnter").addEventListener("click", function () { showMenuStep("menuEnter", true); });
+  btnMenuBack.addEventListener("click", function () {
+    if (menuStack.length > 1) menuStack.pop();
+    showMenuStep(menuStack[menuStack.length - 1], false);
+  });
+  document.getElementById("btnToMenu").addEventListener("click", function () {
+    if (gameType !== "online" && !gameOver && moves.length > 0) {
+      if (!confirm("目前對局還沒結束，確定要回主選單嗎？")) return;
+    }
+    goToMenu();
+  });
+
+  // ============================================================
+  // Online rooms (GomokuNet is set up by the module script below)
+  // ============================================================
+  var netWaiters = [];
+  function withNet(cb) {
+    if (window.GomokuNet) cb(window.GomokuNet);
+    else netWaiters.push(cb);
+  }
+  function onNetReady() {
+    var net = window.GomokuNet;
+    netWaiters.splice(0).forEach(function (cb) { cb(net); });
+    if (!net.available) {
+      ["optRoom"].forEach(function (id) {
+        var b = document.getElementById(id);
+        b.disabled = true;
+        b.querySelector(".d").textContent = "線上功能暫時無法使用";
+      });
+    }
+  }
+  if (window.GomokuNet) onNetReady();
+  else window.addEventListener("gomoku-net-ready", onNetReady);
+
+  function busyMenu(text) {
+    menuMsg.textContent = text;
+    menuMsg.style.color = "var(--ink-soft)";
+  }
+  function errorMenu(text) {
+    menuMsg.textContent = text;
+    menuMsg.style.color = "";
+  }
+
+  document.getElementById("optCreate").addEventListener("click", function () {
+    busyMenu("建立房間中…");
+    withNet(function (net) {
+      net.createRoom(document.getElementById("roomRenju").checked).then(function (code) {
+        enterRoom(net, code);
+      }).catch(function (err) { errorMenu(err.message || "建立房間失敗，請再試一次。"); });
+    });
+  });
+
+  function joinFromInput() {
+    var code = codeInput.value.trim().toUpperCase();
+    if (!/^[A-Z2-9]{6}$/.test(code)) { errorMenu("房間代碼是 6 個英文字母或數字。"); return; }
+    busyMenu("進入房間中…");
+    withNet(function (net) {
+      net.joinRoom(code).then(function () {
+        enterRoom(net, code);
+      }).catch(function (err) { errorMenu(err.message || "進入房間失敗，請再試一次。"); });
+    });
+  }
+  document.getElementById("btnJoin").addEventListener("click", joinFromInput);
+  codeInput.addEventListener("keydown", function (ev) { if (ev.key === "Enter") joinFromInput(); });
+
+  function enterRoom(net, code) {
+    gameType = "online";
+    room = { code: code, myColor: "B", hasOpponent: false, oppOnline: false, renju: true,
+             rematchMine: false, rematchOpp: false, round: 0 };
+    resetGame();
+    try { history.replaceState(null, "", "#room=" + code); } catch (e) {}
+    net.watchRoom(code, applyRoomState);
+  }
+
+  // Mirror the shared room into local state. `s` comes from GomokuNet:
+  // { myColor, hasOpponent, oppOnline, renju, moves:[[r,c],...], winner, round, rematchMine, rematchOpp }
+  function applyRoomState(s) {
+    if (gameType !== "online" || !room) return;
+    var newRound = s.round !== room.round;
+    room.myColor = s.myColor;
+    room.hasOpponent = s.hasOpponent;
+    room.oppOnline = s.oppOnline;
+    room.renju = s.renju;
+    room.rematchMine = s.rematchMine;
+    room.rematchOpp = s.rematchOpp;
+    room.round = s.round;
+    renjuEnabled = s.renju;
+    if (newRound) {
+      gameStartedAt = Date.now();
+      hideAnalyzeResult();
+      analyzing = false;
+      if (view === "replay") view = "play";
+    }
+    moves = s.moves.map(function (mv, i) {
+      return { n: i + 1, color: i % 2 === 0 ? "B" : "W", r: mv[0], c: mv[1] };
+    });
+    rebuildBoardFromMoves();
+    gameOver = !!s.winner;
+    winner = s.winner || null;
+    render();
+  }
+
+  // Validates and applies one move against the authoritative move list
+  // inside the shared transaction; the same rules as a local click.
+  function validateOnlineMove(list, r, c, color, renju) {
+    var b = freshBoard();
+    list.forEach(function (mv, i) { b[mv[0]][mv[1]] = i % 2 === 0 ? "B" : "W"; });
+    if (b[r][c] !== ".") return { ok: false };
+    if (forbiddenReason(b, r, c, color, renju)) return { ok: false };
+    b[r][c] = color;
+    if (checkWinOn(b, r, c, color)) return { ok: true, winner: color };
+    if (isFull(b)) return { ok: true, winner: "D" };
+    return { ok: true, winner: "" };
+  }
+
+  function onlineMove(r, c) {
+    withNet(function (net) {
+      net.playMove(r, c, validateOnlineMove).then(function (res) {
+        if (res.endedGame) logFinishedGame({ winner: res.winner, list: res.list });
+      }).catch(function () {
+        showForbiddenMsg("連線不穩，這一手沒有送出，請再點一次。");
+      });
+    });
+  }
+
+  function leaveRoom() {
+    withNet(function (net) { net.leaveRoom(); });
+    room = null;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+  }
+
+  document.getElementById("btnCopyLink").addEventListener("click", function () {
+    if (!room) return;
+    var link = location.origin + location.pathname + "#room=" + room.code;
+    var btn = this;
+    function done(ok) {
+      btn.textContent = ok ? "已複製！" : link;
+      setTimeout(function () { btn.textContent = "複製邀請連結"; }, 2500);
+    }
+    if (navigator.clipboard) navigator.clipboard.writeText(link).then(function () { done(true); }, function () { done(false); });
+    else done(false);
+  });
+
+  // An invite link (#room=CODE) lands on the code screen, pre-filled.
+  var hashMatch = /room=([A-Za-z2-9]{6})/.exec(location.hash);
+  view = "menu";
+  if (hashMatch) {
+    codeInput.value = hashMatch[1].toUpperCase();
+    menuStack = ["menuMain", "menuTwo", "menuRoom", "menuEnter"];
+    showMenuStep("menuEnter", false);
+  } else {
+    showMenuStep("menuMain", false);
+  }
+  render();
+})();
+</script>
+
+<script type="module">
+// ============================================================
+// GomokuNet: Firebase (anonymous auth + Realtime Database) for friend
+// rooms and the anonymous game log. Fill in FIREBASE_CONFIG to enable;
+// without it the page still offers AI and local play.
+// ============================================================
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCTK3Jy3pl6roLvCox_WBxFMTMfIm7Lq6A",
+  authDomain: "gomoku-8a80b.firebaseapp.com",
+  databaseURL: "https://gomoku-8a80b-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "gomoku-8a80b",
+  appId: "1:376138699086:web:03d2b2218e2c4e1a060e1f"
+};
+const SDK = "https://www.gstatic.com/firebasejs/10.12.2/";
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1
+const ENC = "abcdefghijklmno"; // a move is two letters: column, row
+
+function encodeMoves(list) { return list.map(([r, c]) => ENC[c] + ENC[r]).join(""); }
+function decodeMoves(s) {
+  const out = [];
+  for (let i = 0; s && i + 1 < s.length; i += 2) out.push([ENC.indexOf(s[i + 1]), ENC.indexOf(s[i])]);
+  return out;
+}
+function randomCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return Array.from(bytes, (b) => CODE_ALPHABET[b % CODE_ALPHABET.length]).join("");
+}
+
+function publish(api) {
+  window.GomokuNet = api;
+  window.dispatchEvent(new Event("gomoku-net-ready"));
+}
+
+async function init() {
+  if (!FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.databaseURL) return publish({ available: false });
+  const [{ initializeApp }, authMod, dbMod] = await Promise.all([
+    import(SDK + "firebase-app.js"),
+    import(SDK + "firebase-auth.js"),
+    import(SDK + "firebase-database.js"),
+  ]);
+  const { getAuth, signInAnonymously } = authMod;
+  const { getDatabase, ref, get, push, set, onValue, runTransaction, onDisconnect, serverTimestamp } = dbMod;
+
+  const app = initializeApp(FIREBASE_CONFIG);
+  const auth = getAuth(app);
+  const db = getDatabase(app);
+  const uid = (await signInAnonymously(auth)).user.uid;
+
+  let current = null; // { code, roomRef, unsubscribe, onlineRef }
+
+  async function createRoom(renju) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const code = randomCode();
+      const res = await runTransaction(ref(db, "rooms/" + code), (cur) => {
+        if (cur) return; // taken: abort and try another code
+        return { black: uid, white: "", renju: !!renju, moves: "", winner: "", round: 1, createdAt: Date.now() };
+      });
+      if (res.committed) return code;
+    }
+    throw new Error("建立房間失敗，請再試一次。");
+  }
+
+  async function joinRoom(code) {
+    const roomRef = ref(db, "rooms/" + code);
+    const snap = await get(roomRef);
+    if (!snap.exists()) throw new Error("找不到這個房間，請確認代碼。");
+    const res = await runTransaction(roomRef, (cur) => {
+      if (!cur) return cur;
+      if (cur.black === uid || cur.white === uid) return; // already seated: nothing to write
+      if (cur.white) return; // full
+      cur.white = uid;
+      return cur;
+    });
+    const r = res.snapshot.val();
+    if (!r || (r.black !== uid && r.white !== uid)) throw new Error("這個房間已經滿了。");
+  }
+
+  function watchRoom(code, cb) {
+    leaveRoom();
+    const roomRef = ref(db, "rooms/" + code);
+    const onlineRef = ref(db, "rooms/" + code + "/online/" + uid);
+    onDisconnect(onlineRef).set(false);
+    set(onlineRef, true);
+    const unsubscribe = onValue(roomRef, (snap) => {
+      const r = snap.val();
+      if (!r) return;
+      const myColor = r.black === uid ? "B" : "W";
+      const opp = myColor === "B" ? r.white : r.black;
+      const rematch = r.rematch || {};
+      cb({
+        myColor,
+        hasOpponent: !!opp,
+        oppOnline: !!(opp && r.online && r.online[opp]),
+        renju: !!r.renju,
+        moves: decodeMoves(r.moves || ""),
+        winner: r.winner || "",
+        round: r.round || 1,
+        rematchMine: !!rematch[uid],
+        rematchOpp: !!(opp && rematch[opp]),
+      });
+    });
+    current = { code, roomRef, onlineRef, unsubscribe };
+  }
+
+  function leaveRoom() {
+    if (!current) return;
+    current.unsubscribe();
+    onDisconnect(current.onlineRef).cancel();
+    set(current.onlineRef, false);
+    current = null;
+  }
+
+  // Returning undefined from a transaction handler aborts it locally,
+  // without the server ever checking the data it was judged against. So
+  // when a move doesn't fit what this client sees (perhaps a stale cache
+  // that hasn't received the opponent's last move yet), hand the room back
+  // unchanged: the server compares it with its own copy and, if it was
+  // stale, Firebase reruns the handler with the fresh data.
+  async function playMove(r, c, validate) {
+    if (!current) throw new Error("not in a room");
+    let applied = false, endedGame = false, finalList = null, finalWinner = "";
+    const res = await runTransaction(current.roomRef, (cur) => {
+      applied = false; endedGame = false;
+      if (!cur) return cur;
+      const myColor = cur.black === uid ? "B" : (cur.white === uid ? "W" : null);
+      if (!myColor || !cur.white || cur.winner) return cur;
+      const list = decodeMoves(cur.moves || "");
+      if ((list.length % 2 === 0 ? "B" : "W") !== myColor) return cur;
+      const v = validate(list, r, c, myColor, !!cur.renju);
+      if (!v.ok) return cur;
+      list.push([r, c]);
+      cur.moves = encodeMoves(list);
+      applied = true;
+      if (v.winner) { cur.winner = v.winner; endedGame = true; finalList = list; finalWinner = v.winner; }
+      return cur;
+    });
+    const ok = res.committed && applied;
+    return { committed: ok, endedGame: ok && endedGame, winner: finalWinner, list: finalList };
+  }
+
+  async function requestRematch() {
+    if (!current) return;
+    await runTransaction(current.roomRef, (cur) => {
+      if (!cur) return cur;
+      if (!cur.winner || (cur.black !== uid && cur.white !== uid)) return cur; // maybe stale: let the server check
+      cur.rematch = cur.rematch || {};
+      cur.rematch[uid] = true;
+      if (cur.rematch[cur.black] && cur.rematch[cur.white]) {
+        // Both agreed: swap colours and start the next round.
+        const b = cur.black;
+        cur.black = cur.white;
+        cur.white = b;
+        cur.moves = "";
+        cur.winner = "";
+        cur.rematch = null;
+        cur.round = (cur.round || 1) + 1;
+      }
+      return cur;
+    });
+  }
+
+  function logGame(rec) {
+    return push(ref(db, "games"), Object.assign({}, rec, { at: serverTimestamp() })).catch(() => {});
+  }
+
+  publish({ available: true, createRoom, joinRoom, watchRoom, leaveRoom, playMove, requestRematch, logGame });
+}
+
+init().catch((err) => {
+  console.warn("GomokuNet unavailable:", err);
+  publish({ available: false });
+});
+</script>
+</body>
+</html>
