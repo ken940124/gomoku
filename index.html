@@ -1295,7 +1295,11 @@
     roomBox.classList.toggle("hidden", !online);
     statElapsedRow.classList.toggle("hidden", gameType !== "ai");
     btnNewGame.classList.toggle("hidden", online);
-    renjuToggle.disabled = online;
+    // Rules are fixed once a game is under way (online: by the room), so the
+    // switch can't be flipped off for one forbidden move and back on.
+    var rulesLocked = online || (moves.length > 0 && !gameOver);
+    renjuToggle.disabled = rulesLocked;
+    renjuToggle.parentNode.title = online ? "由建立房間的人決定" : (rulesLocked ? "對局開始後不能切換，請在開局前或重新開局時設定" : "");
     if (online && room) {
       renjuToggle.checked = room.renju;
       document.getElementById("roomCode").textContent = room.code;
