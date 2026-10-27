@@ -168,6 +168,12 @@
   .room-box { background: var(--panel-2); border-radius: 4px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
   .room-code { font-size: 26px; font-weight: 700; letter-spacing: 0.2em; font-variant-numeric: tabular-nums; }
   .room-box .btn { font-size: 13px; padding: 7px 12px; }
+
+  .seat-note { font-size: 12.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  .seat-note.urgent { color: var(--seal); font-weight: 700; }
+  .request-box { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: var(--panel-2); border: 1px solid var(--btn2-border); border-radius: 4px; padding: 8px 12px; font-size: 13.5px; font-weight: 600; }
+  .request-box .actions { display: flex; gap: 8px; }
+  .request-box .btn { font-size: 13px; padding: 6px 14px; }
 </style>
 </head>
 <body>
@@ -224,6 +230,15 @@
         <span class="turn-pill" id="turnPill"><span class="stone-dot b"></span>輪到你（黑棋）</span>
         <span class="thinking hidden" id="thinking"><span class="spinner"></span>白棋思考中…</span>
         <button class="btn secondary" id="btnUndo" title="悔棋（一局限一次）">↺ 悔棋</button>
+      </div>
+
+      <div class="seat-note hidden" id="seatNote" role="status"></div>
+      <div id="requestBox" class="request-box hidden" role="status">
+        <span id="requestText"></span>
+        <span class="actions" id="requestActions">
+          <button class="btn" id="btnReqYes">同意</button>
+          <button class="btn secondary" id="btnReqNo">拒絕</button>
+        </span>
       </div>
 
       <div id="forbiddenMsg" class="forbidden-msg hidden"></div>
@@ -339,59 +354,87 @@
       return info[0]===5;
     }
 
-    function directionHasRealFour(board, r, c, player, dx, dy){
-      var info = runInfo(board,r,c,player,dx,dy);
-      var cnt=info[0], startPrev=info[1], endNext=info[2];
-      if (cnt!==4) return false;
-      var ends=[startPrev,endNext];
-      for (var i=0;i<2;i++){
-        var pos=ends[i];
-        if (isOpen(board,pos) && completesToFiveNotOverline(board,pos,player,dx,dy)) return true;
+    // Black has just been placed at (r,c). How many fours run through it in
+    // this direction? A four is an empty point that would complete an exact
+    // five together with (r,c). Both ends of one straight four count once;
+    // two separate completions (e.g. B.BBB.B with (r,c) in the middle) are
+    // two fours in a single line, which is still a double-four.
+    function fourCountInDir(board, r, c, player, dx, dy){
+      var hits = 0;
+      for (var k=-4; k<=4; k++){
+        if (k===0) continue;
+        var qr=r+dx*k, qc=c+dy*k;
+        if (!inBounds(qr,qc) || board[qr][qc]!=='.') continue;
+        board[qr][qc]=player;
+        if (runInfo(board,r,c,player,dx,dy)[0]===5) hits++;
+        board[qr][qc]='.';
       }
-      return false;
+      if (hits===2 && runInfo(board,r,c,player,dx,dy)[0]===4) return 1;
+      return hits;
     }
 
-    function directionHasRealThree(board, r, c, player, dx, dy){
+    // Exactly four in a row through (r,c), both ends empty, and each end
+    // would make an exact five: an unstoppable "straight four".
+    function isStraightFour(board, r, c, player, dx, dy){
       var info = runInfo(board,r,c,player,dx,dy);
-      var cnt=info[0], startPrev=info[1], endNext=info[2];
-      if (cnt!==3) return false;
-      if (!(isOpen(board,startPrev) && isOpen(board,endNext))) return false;
-      var ends=[startPrev,endNext];
+      if (info[0]!==4) return false;
+      var ends=[info[1],info[2]];
       for (var i=0;i<2;i++){
-        var pr=ends[i][0], pc=ends[i][1];
-        board[pr][pc]=player;
-        var hasFour = directionHasRealFour(board,pr,pc,player,dx,dy);
-        board[pr][pc]='.';
-        if (hasFour) return true;
+        if (!isOpen(board,ends[i]) || !completesToFiveNotOverline(board,ends[i],player,dx,dy)) return false;
       }
-      return false;
+      return true;
     }
 
-    function classifyBlackMove(board, r, c){
+    // Empty points in this direction where one more Black stone would turn
+    // the line through (r,c) into a straight four. Any such point means the
+    // line is a three -- solid (BBB) or split (BB.B / B.BB) alike.
+    function threeKeysInDir(board, r, c, player, dx, dy){
+      var keys = [];
+      for (var k=-4; k<=4; k++){
+        if (k===0) continue;
+        var qr=r+dx*k, qc=c+dy*k;
+        if (!inBounds(qr,qc) || board[qr][qc]!=='.') continue;
+        board[qr][qc]=player;
+        if (isStraightFour(board,r,c,player,dx,dy)) keys.push([qr,qc]);
+        board[qr][qc]='.';
+      }
+      return keys;
+    }
+
+    // Returns 'win', 'overline', 'double-four', 'double-three' or null for
+    // a hypothetical Black move at empty (r,c). A three only counts when it
+    // can really become a straight four, i.e. at least one of its key points
+    // is itself a legal Black move; depth caps that recursive check.
+    function classifyBlackMove(board, r, c, depth){
+      if (depth===undefined) depth = 2;
       var player='B';
       board[r][c]=player;
-      var result;
       try {
         for (var d=0; d<DIRS.length; d++){
-          var cnt = runInfo(board,r,c,player,DIRS[d][0],DIRS[d][1])[0];
-          if (cnt===5){ result='win'; return result; }
+          if (runInfo(board,r,c,player,DIRS[d][0],DIRS[d][1])[0]===5) return 'win';
         }
         for (var d2=0; d2<DIRS.length; d2++){
-          var cnt2 = runInfo(board,r,c,player,DIRS[d2][0],DIRS[d2][1])[0];
-          if (cnt2>=6){ result='overline'; return result; }
+          if (runInfo(board,r,c,player,DIRS[d2][0],DIRS[d2][1])[0]>=6) return 'overline';
         }
-        var fourCount=0;
+        var fours=0, threes=[];
         for (var d3=0; d3<DIRS.length; d3++){
-          if (directionHasRealFour(board,r,c,player,DIRS[d3][0],DIRS[d3][1])) fourCount++;
+          var f = fourCountInDir(board,r,c,player,DIRS[d3][0],DIRS[d3][1]);
+          fours += f;
+          if (!f){
+            var keys = threeKeysInDir(board,r,c,player,DIRS[d3][0],DIRS[d3][1]);
+            if (keys.length) threes.push(keys);
+          }
         }
-        if (fourCount>=2){ result='double-four'; return result; }
-        var threeCount=0;
-        for (var d4=0; d4<DIRS.length; d4++){
-          if (directionHasRealThree(board,r,c,player,DIRS[d4][0],DIRS[d4][1])) threeCount++;
+        if (fours>=2) return 'double-four';
+        if (threes.length<2) return null;
+        var real=0;
+        for (var t=0; t<threes.length; t++){
+          for (var q=0; q<threes[t].length; q++){
+            var status = depth>0 ? classifyBlackMove(board,threes[t][q][0],threes[t][q][1],depth-1) : null;
+            if (status===null || status==='win'){ real++; break; }
+          }
         }
-        if (threeCount>=2){ result='double-three'; return result; }
-        result=null;
-        return result;
+        return real>=2 ? 'double-three' : null;
       } finally {
         board[r][c]='.';
       }
@@ -769,8 +812,51 @@
         }
         d++;
       }
-      if (best===null){ best = rootCandidates.length?rootCandidates[0]:null; bestVal=0; }
+      var fellBack = best===null;
+      if (fellBack){ best = rootCandidates.length?rootCandidates[0]:null; bestVal=0; }
+      // Lost or close to it (the best line still leaves the opponent a
+      // four-level threat), no move survived the defensive check, or the
+      // search ran out of time before ranking anything: the pick above may
+      // be arbitrary. Put up the most stubborn defense instead.
+      if (fellBack || !safeCandidates.length || bestVal <= -40000){
+        var stubborn = stubbornDefense(board, player, opponent, renju);
+        if (stubborn) best = stubborn;
+      }
       return [best, bestVal];
+    }
+
+    // Block the opponent's immediate win if there is one; otherwise occupy
+    // the first square of their forced-win sequence, or failing that (the
+    // search may time out on a slow device) a square where they would make
+    // a straight four -- so they have to find another way through.
+    function stubbornDefense(board, player, opponent, renju){
+      function playable(mv){
+        if (!mv || board[mv[0]][mv[1]]!=='.') return false;
+        if (!(renju && player==='B')) return true;
+        var status = classifyBlackMove(board, mv[0], mv[1]);
+        return status===null || status==='win';
+      }
+      var threats = findImmediateWins(board, opponent);
+      for (var i=0;i<threats.length;i++) if (playable(threats[i])) return threats[i];
+      var seq = null;
+      try { seq = vcfSearch(board, opponent, player, 30, Date.now(), 1.5, renju); } catch(e){ if(!(e instanceof SearchTimeout)) throw e; }
+      if (!seq){
+        try { seq = vctSearch(board, opponent, player, 8, Date.now(), 1.5, renju); } catch(e){ if(!(e instanceof SearchTimeout)) throw e; }
+      }
+      if (seq && playable(seq[0])) return seq[0];
+      var cands = getCandidates(board);
+      for (var k=0;k<cands.length;k++){
+        var r=cands[k][0], c=cands[k][1];
+        if (renju && opponent==='B'){
+          var st = classifyBlackMove(board,r,c);
+          if (st!==null && st!=='win') continue;
+        }
+        board[r][c]=opponent;
+        var n = findImmediateWins(board, opponent, getLocalEmptyCells(board,r,c)).length;
+        board[r][c]='.';
+        if (n>=2 && playable(cands[k])) return cands[k];
+      }
+      return null;
     }
 
     // ---------- post-game review ----------
@@ -885,30 +971,42 @@
     board[r][c]='.';
     return info[0]===5;
   }
-  function rjHasRealFour(board, r, c, player, dx, dy){
+  function rjFourCountInDir(board, r, c, player, dx, dy){
+    var hits = 0;
+    for (var k=-4; k<=4; k++){
+      if (k===0) continue;
+      var qr=r+dx*k, qc=c+dy*k;
+      if (!rjInBounds(qr,qc) || board[qr][qc]!=='.') continue;
+      board[qr][qc]=player;
+      if (rjRunInfo(board,r,c,player,dx,dy)[0]===5) hits++;
+      board[qr][qc]='.';
+    }
+    if (hits===2 && rjRunInfo(board,r,c,player,dx,dy)[0]===4) return 1;
+    return hits;
+  }
+  function rjIsStraightFour(board, r, c, player, dx, dy){
     var info = rjRunInfo(board,r,c,player,dx,dy);
     if (info[0]!==4) return false;
     var ends=[info[1],info[2]];
     for (var i=0;i<2;i++){
-      if (rjIsOpen(board,ends[i]) && rjCompletesToFive(board,ends[i],player,dx,dy)) return true;
+      if (!rjIsOpen(board,ends[i]) || !rjCompletesToFive(board,ends[i],player,dx,dy)) return false;
     }
-    return false;
+    return true;
   }
-  function rjHasRealThree(board, r, c, player, dx, dy){
-    var info = rjRunInfo(board,r,c,player,dx,dy);
-    if (info[0]!==3) return false;
-    if (!(rjIsOpen(board,info[1]) && rjIsOpen(board,info[2]))) return false;
-    var ends=[info[1],info[2]];
-    for (var i=0;i<2;i++){
-      var pr=ends[i][0], pc=ends[i][1];
-      board[pr][pc]=player;
-      var hasFour = rjHasRealFour(board,pr,pc,player,dx,dy);
-      board[pr][pc]='.';
-      if (hasFour) return true;
+  function rjThreeKeysInDir(board, r, c, player, dx, dy){
+    var keys = [];
+    for (var k=-4; k<=4; k++){
+      if (k===0) continue;
+      var qr=r+dx*k, qc=c+dy*k;
+      if (!rjInBounds(qr,qc) || board[qr][qc]!=='.') continue;
+      board[qr][qc]=player;
+      if (rjIsStraightFour(board,r,c,player,dx,dy)) keys.push([qr,qc]);
+      board[qr][qc]='.';
     }
-    return false;
+    return keys;
   }
-  function classifyBlackMoveMain(board, r, c){
+  function classifyBlackMoveMain(board, r, c, depth){
+    if (depth===undefined) depth = 2;
     var player='B';
     board[r][c]=player;
     try {
@@ -918,17 +1016,25 @@
       for (var d2=0; d2<RENJU_DIRS.length; d2++){
         if (rjRunInfo(board,r,c,player,RENJU_DIRS[d2][0],RENJU_DIRS[d2][1])[0]>=6) return 'overline';
       }
-      var fourCount=0;
+      var fours=0, threes=[];
       for (var d3=0; d3<RENJU_DIRS.length; d3++){
-        if (rjHasRealFour(board,r,c,player,RENJU_DIRS[d3][0],RENJU_DIRS[d3][1])) fourCount++;
+        var f = rjFourCountInDir(board,r,c,player,RENJU_DIRS[d3][0],RENJU_DIRS[d3][1]);
+        fours += f;
+        if (!f){
+          var keys = rjThreeKeysInDir(board,r,c,player,RENJU_DIRS[d3][0],RENJU_DIRS[d3][1]);
+          if (keys.length) threes.push(keys);
+        }
       }
-      if (fourCount>=2) return 'double-four';
-      var threeCount=0;
-      for (var d4=0; d4<RENJU_DIRS.length; d4++){
-        if (rjHasRealThree(board,r,c,player,RENJU_DIRS[d4][0],RENJU_DIRS[d4][1])) threeCount++;
+      if (fours>=2) return 'double-four';
+      if (threes.length<2) return null;
+      var real=0;
+      for (var t=0; t<threes.length; t++){
+        for (var q=0; q<threes[t].length; q++){
+          var status = depth>0 ? classifyBlackMoveMain(board,threes[t][q][0],threes[t][q][1],depth-1) : null;
+          if (status===null || status==='win'){ real++; break; }
+        }
       }
-      if (threeCount>=2) return 'double-three';
-      return null;
+      return real>=2 ? 'double-three' : null;
     } finally {
       board[r][c]='.';
     }
@@ -1089,6 +1195,10 @@
   var analyzeProgressText = document.getElementById("analyzeProgressText");
   var analyzeResultBox = document.getElementById("analyzeResultBox");
   var roomBox = document.getElementById("roomBox");
+  var seatNote = document.getElementById("seatNote");
+  var requestBox = document.getElementById("requestBox");
+  var requestText = document.getElementById("requestText");
+  var requestActions = document.getElementById("requestActions");
 
   function hideAnalyzeResult() {
     analyzeProgressEl.classList.add("hidden");
@@ -1120,7 +1230,7 @@
     if (view !== "play" || gameOver) return false;
     if (gameType === "ai") return !thinking;
     if (gameType === "local") return true;
-    return !!room && room.hasOpponent && room.myColor === turnColor();
+    return !!room && room.hasOpponent && !room.undoPending && room.myColor === turnColor();
   }
 
   function turnPillHtml() {
@@ -1137,7 +1247,10 @@
     if (winner === "D") return "和局（棋盤已下滿）";
     if (gameType === "ai") return winner === "B" ? "你獲勝了！" : "白棋獲勝";
     if (gameType === "local") return colorZh(winner) + "獲勝！";
-    return winner === room.myColor ? "你獲勝了！（" + colorZh(winner) + "）" : "對手獲勝（" + colorZh(winner) + "）";
+    var mine = winner === room.myColor;
+    if (room.endReason === "disconnect") return mine ? "對方已離線，遊戲勝利！" : "你離線太久，判定落敗";
+    if (room.endReason === "timeout") return mine ? "對手超過 30 秒沒下，你獲勝了！" : "你超過 30 秒沒下，判定落敗";
+    return mine ? "你獲勝了！（" + colorZh(winner) + "）" : "對手獲勝（" + colorZh(winner) + "）";
   }
   function isHappyEnding() {
     if (winner === "D") return false;
@@ -1153,7 +1266,6 @@
     var online = gameType === "online";
     roomBox.classList.toggle("hidden", !online);
     statElapsedRow.classList.toggle("hidden", gameType !== "ai");
-    btnUndo.classList.toggle("hidden", online);
     btnNewGame.classList.toggle("hidden", online);
     renjuToggle.disabled = online;
     if (online && room) {
@@ -1177,10 +1289,14 @@
         btnUndo.disabled = gameOver || thinking || undoUsed || moves.length === 0;
         btnUndo.textContent = undoUsed ? "↺ 悔棋（已用過）" : "↺ 悔棋";
         btnUndo.title = "悔棋（一局限一次）";
-      } else {
+      } else if (gameType === "local") {
         btnUndo.disabled = gameOver || moves.length === 0;
         btnUndo.textContent = "↺ 悔棋";
         btnUndo.title = "收回上一手";
+      } else {
+        btnUndo.disabled = gameOver || !room || !room.hasOpponent || moves.length === 0 || room.undoPending;
+        btnUndo.textContent = room && room.undoMine ? "↺ 等對手回覆…" : "↺ 悔棋";
+        btnUndo.title = "請對手同意後，雙方各退一步";
       }
       if (gameOver) {
         endgamePanel.classList.toggle("you-win", isHappyEnding());
@@ -1194,15 +1310,17 @@
         }
         if (online && room) {
           btnNewFromEnd.disabled = room.rematchMine || !room.oppOnline;
-          btnNewFromEnd.textContent = room.rematchMine ? "等對手同意再來一局…"
-            : (room.rematchOpp ? "對手想再來一局，同意" : "再來一場（交換黑白）");
+          btnNewFromEnd.textContent = room.rematchMine ? "已邀請，等對手回覆…"
+            : (room.rematchOpp ? "同意再來一局" : (room.rematchDeclined ? "再邀請一次" : "邀請再來一場（黑白互換）"));
         } else {
           btnNewFromEnd.disabled = false;
           btnNewFromEnd.textContent = "再來一場";
         }
       }
       statMode.textContent = gameType === "ai" ? "對戰 AI" : (gameType === "local" ? "本機雙人" : "線上房間");
+      renderRequest();
     } else {
+      requestBox.classList.add("hidden");
       var stones = stonesUpTo(replayIndex);
       drawBoard(boardCanvas, stones, { currentNum: replayIndex });
       boardCanvas.className = "locked";
@@ -1222,6 +1340,7 @@
       statMode.textContent = "復盤中";
     }
 
+    updateSeatNote();
     statMoves.textContent = String(moves.length);
     movelistMini.innerHTML = "";
     moves.forEach(function (m) {
@@ -1255,6 +1374,7 @@
       engine: "js-v1"
     };
     if (gameType === "ai") { rec.undoUsed = undoUsed; rec.human = "B"; }
+    if (final && final.endReason) rec.endReason = final.endReason;
     withNet(function (net) { if (net.available) net.logGame(rec); });
   }
 
@@ -1393,6 +1513,7 @@
     } else if (gameType === "local") {
       moves.pop();
     } else {
+      if (room && !room.undoPending) withNet(function (net) { net.requestUndo(); });
       return;
     }
     // renumber remaining moves so display stays contiguous
@@ -1547,27 +1668,28 @@
   function enterRoom(net, code) {
     gameType = "online";
     room = { code: code, myColor: "B", hasOpponent: false, oppOnline: false, renju: true,
-             rematchMine: false, rematchOpp: false, round: 0 };
+             rematchMine: false, rematchOpp: false, rematchDeclined: false, round: 0, turnAt: 0,
+             endReason: "", undoPending: false, undoMine: false, undoDeclined: false, offlineSince: 0 };
     resetGame();
     try { history.replaceState(null, "", "#room=" + code); } catch (e) {}
     net.watchRoom(code, applyRoomState);
   }
 
-  // Mirror the shared room into local state. `s` comes from GomokuNet:
-  // { myColor, hasOpponent, oppOnline, renju, moves:[[r,c],...], winner, round, rematchMine, rematchOpp }
+  // Mirror the shared room into local state. `s` comes from GomokuNet's
+  // watchRoom (seats, moves, result, clock, pending undo / rematch requests).
+  var ROOM_FIELDS = ["myColor", "hasOpponent", "oppOnline", "renju", "round", "turnAt", "endReason",
+    "rematchMine", "rematchOpp", "rematchDeclined", "undoPending", "undoMine", "undoDeclined"];
   function applyRoomState(s) {
     if (gameType !== "online" || !room) return;
     var newRound = s.round !== room.round;
-    room.myColor = s.myColor;
-    room.hasOpponent = s.hasOpponent;
-    room.oppOnline = s.oppOnline;
-    room.renju = s.renju;
-    room.rematchMine = s.rematchMine;
-    room.rematchOpp = s.rematchOpp;
-    room.round = s.round;
+    ROOM_FIELDS.forEach(function (k) { room[k] = s[k]; });
+    // When the opponent drops mid-game, start this client's grace countdown.
+    if (s.hasOpponent && !s.winner && !s.oppOnline) room.offlineSince = room.offlineSince || Date.now();
+    else room.offlineSince = 0;
     renjuEnabled = s.renju;
     if (newRound) {
       gameStartedAt = Date.now();
+      lastClaimAt = 0;
       hideAnalyzeResult();
       analyzing = false;
       if (view === "replay") view = "play";
@@ -1580,6 +1702,74 @@
     winner = s.winner || null;
     render();
   }
+
+  // The bar under the board: the opponent's undo or rematch request (with
+  // 同意 / 拒絕), or word that they turned ours down.
+  var requestKind = "";
+  function renderRequest() {
+    var text = "", ask = "";
+    if (gameType === "online" && room) {
+      if (!gameOver && room.undoPending && !room.undoMine) { text = "對手請求悔棋（雙方各退一步），要同意嗎？"; ask = "undo"; }
+      else if (!gameOver && room.undoDeclined) text = "對手拒絕了悔棋。";
+      else if (gameOver && room.rematchOpp && !room.rematchMine) { text = "對手邀請再來一局（黑白互換），要同意嗎？"; ask = "rematch"; }
+      else if (gameOver && room.rematchDeclined) text = "對手拒絕了再來一局。";
+    }
+    requestKind = ask;
+    requestText.textContent = text;
+    requestActions.classList.toggle("hidden", !ask);
+    requestBox.classList.toggle("hidden", !text);
+  }
+  document.getElementById("btnReqYes").addEventListener("click", function () {
+    if (requestKind === "undo") withNet(function (net) { net.answerUndo(true); });
+    else if (requestKind === "rematch") withNet(function (net) { net.requestRematch(); });
+  });
+  document.getElementById("btnReqNo").addEventListener("click", function () {
+    if (requestKind === "undo") withNet(function (net) { net.answerUndo(false); });
+    else if (requestKind === "rematch") withNet(function (net) { net.declineRematch(); });
+  });
+
+  // Small line under the board: your colour this round, plus the move clock
+  // or the opponent-offline countdown.
+  function updateSeatNote() {
+    var show = gameType === "online" && !!room && view === "play";
+    seatNote.classList.toggle("hidden", !show);
+    if (!show) return;
+    var text = "本局你執 " + (room.myColor === "B" ? "● 黑子（先手）" : "○ 白子（後手）");
+    var urgent = false, net = window.GomokuNet;
+    if (!gameOver && room.hasOpponent && net && net.available) {
+      if (room.offlineSince) {
+        var left = Math.max(0, Math.ceil((room.offlineSince + net.offlineGraceMs - Date.now()) / 1000));
+        text += "｜對方已離線，" + left + " 秒內沒回來就判你勝利";
+        urgent = true;
+      } else if (room.undoPending) {
+        text += "｜悔棋請求中，計時暫停";
+      } else if (room.turnAt) {
+        var secs = Math.max(0, Math.ceil((room.turnAt + net.turnLimitMs - net.serverNow()) / 1000));
+        text += "｜" + (room.myColor === turnColor() ? "你" : "對手") + "還剩 " + secs + " 秒";
+        urgent = secs <= 10;
+      }
+    }
+    seatNote.textContent = text;
+    seatNote.classList.toggle("urgent", urgent);
+  }
+
+  // Every quarter second: refresh the clock, and once time is up (or the
+  // opponent's grace period has run out) ask the server to end the game.
+  // Either player may claim; the room transaction decides once.
+  var lastClaimAt = 0;
+  function onlineTick() {
+    if (gameType !== "online" || !room || view === "menu") return;
+    updateSeatNote();
+    var net = window.GomokuNet;
+    if (!net || !net.available || gameOver || !room.hasOpponent || Date.now() - lastClaimAt < 3000) return;
+    var claim = null;
+    if (room.offlineSince && Date.now() - room.offlineSince >= net.offlineGraceMs) claim = net.claimDisconnect;
+    else if (room.turnAt && !room.undoPending && net.serverNow() - room.turnAt > net.turnLimitMs + 500) claim = net.claimTimeout;
+    if (!claim) return;
+    lastClaimAt = Date.now();
+    claim().then(function (ended) { if (ended) logFinishedGame(ended); });
+  }
+  setInterval(onlineTick, 250);
 
   // Validates and applies one move against the authoritative move list
   // inside the shared transaction; the same rules as a local click.
@@ -1684,6 +1874,17 @@ async function init() {
   const db = getDatabase(app);
   const uid = (await signInAnonymously(auth)).user.uid;
 
+  // The server's clock, so both players' countdowns agree.
+  let clockOffset = 0;
+  onValue(ref(db, ".info/serverTimeOffset"), (snap) => { clockOffset = snap.val() || 0; });
+  const serverNow = () => Date.now() + clockOffset;
+  const TURN_LIMIT_MS = 30000;
+  const OFFLINE_GRACE_MS = 10000;
+
+  const seatOf = (cur) => (cur.black === uid ? "B" : (cur.white === uid ? "W" : null));
+  const inPlay = (cur) => !!cur.white && !cur.winner;
+  const undoPending = (cur) => !!(cur.undoReq && cur.undoReq.state === "pending");
+
   let current = null; // { code, roomRef, unsubscribe, onlineRef }
 
   async function createRoom(renju) {
@@ -1691,7 +1892,7 @@ async function init() {
       const code = randomCode();
       const res = await runTransaction(ref(db, "rooms/" + code), (cur) => {
         if (cur) return; // taken: abort and try another code
-        return { black: uid, white: "", renju: !!renju, moves: "", winner: "", round: 1, createdAt: Date.now() };
+        return { black: uid, white: "", renju: !!renju, moves: "", winner: "", round: 1, turnAt: 0, createdAt: Date.now() };
       });
       if (res.committed) return code;
     }
@@ -1707,6 +1908,7 @@ async function init() {
       if (cur.black === uid || cur.white === uid) return; // already seated: nothing to write
       if (cur.white) return; // full
       cur.white = uid;
+      cur.turnAt = serverNow(); // the game (and Black's clock) starts now
       return cur;
     });
     const r = res.snapshot.val();
@@ -1725,6 +1927,7 @@ async function init() {
       const myColor = r.black === uid ? "B" : "W";
       const opp = myColor === "B" ? r.white : r.black;
       const rematch = r.rematch || {};
+      const u = r.undoReq || null;
       cb({
         myColor,
         hasOpponent: !!opp,
@@ -1732,9 +1935,15 @@ async function init() {
         renju: !!r.renju,
         moves: decodeMoves(r.moves || ""),
         winner: r.winner || "",
+        endReason: r.endReason || "",
         round: r.round || 1,
+        turnAt: r.turnAt || 0,
         rematchMine: !!rematch[uid],
         rematchOpp: !!(opp && rematch[opp]),
+        rematchDeclined: !!(r.rematchDeclinedBy && r.rematchDeclinedBy !== uid),
+        undoPending: !!(u && u.state === "pending"),
+        undoMine: !!(u && u.state === "pending" && u.by === uid),
+        undoDeclined: !!(u && u.state === "declined" && u.by === uid),
       });
     });
     current = { code, roomRef, onlineRef, unsubscribe };
@@ -1748,26 +1957,30 @@ async function init() {
     current = null;
   }
 
-  // Returning undefined from a transaction handler aborts it locally,
-  // without the server ever checking the data it was judged against. So
-  // when a move doesn't fit what this client sees (perhaps a stale cache
-  // that hasn't received the opponent's last move yet), hand the room back
-  // unchanged: the server compares it with its own copy and, if it was
-  // stale, Firebase reruns the handler with the fresh data.
+  // Every room change below goes through a transaction. Returning undefined
+  // from a handler aborts it locally, without the server ever checking the
+  // data it was judged against. So when a change doesn't fit what this
+  // client sees (perhaps a stale cache that hasn't received the opponent's
+  // last move yet), the handlers hand the room back unchanged: the server
+  // compares it with its own copy and, if it was stale, Firebase reruns the
+  // handler with the fresh data.
   async function playMove(r, c, validate) {
     if (!current) throw new Error("not in a room");
     let applied = false, endedGame = false, finalList = null, finalWinner = "";
     const res = await runTransaction(current.roomRef, (cur) => {
       applied = false; endedGame = false;
       if (!cur) return cur;
-      const myColor = cur.black === uid ? "B" : (cur.white === uid ? "W" : null);
-      if (!myColor || !cur.white || cur.winner) return cur;
+      const myColor = seatOf(cur);
+      if (!myColor || !inPlay(cur) || undoPending(cur)) return cur;
+      if (cur.turnAt && serverNow() - cur.turnAt > TURN_LIMIT_MS) return cur; // too late: that's a timeout
       const list = decodeMoves(cur.moves || "");
       if ((list.length % 2 === 0 ? "B" : "W") !== myColor) return cur;
       const v = validate(list, r, c, myColor, !!cur.renju);
       if (!v.ok) return cur;
       list.push([r, c]);
       cur.moves = encodeMoves(list);
+      cur.turnAt = serverNow();
+      cur.undoReq = null;
       applied = true;
       if (v.winner) { cur.winner = v.winner; endedGame = true; finalList = list; finalWinner = v.winner; }
       return cur;
@@ -1776,13 +1989,87 @@ async function init() {
     return { committed: ok, endedGame: ok && endedGame, winner: finalWinner, list: finalList };
   }
 
+  // Ends the game for `reason` if decide(cur, myColor) names a winner.
+  // Resolves { winner, list, endReason } for the client whose write ended
+  // it (that client logs the game), or null.
+  async function endGameBy(reason, decide) {
+    if (!current) return null;
+    let ended = null;
+    const res = await runTransaction(current.roomRef, (cur) => {
+      ended = null;
+      if (!cur) return cur;
+      const me = seatOf(cur);
+      if (!me || !inPlay(cur)) return cur;
+      const win = decide(cur, me);
+      if (!win) return cur;
+      cur.winner = win;
+      cur.endReason = reason;
+      cur.undoReq = null;
+      ended = { winner: win, list: decodeMoves(cur.moves || ""), endReason: reason };
+      return cur;
+    });
+    return res.committed ? ended : null;
+  }
+
+  // Whoever's turn it is ran out of time (no clock runs while an undo
+  // request waits for an answer).
+  function claimTimeout() {
+    return endGameBy("timeout", (cur) => {
+      if (!cur.turnAt || undoPending(cur) || serverNow() - cur.turnAt <= TURN_LIMIT_MS) return null;
+      return decodeMoves(cur.moves || "").length % 2 === 0 ? "W" : "B";
+    });
+  }
+
+  // The opponent's connection is gone (the caller has waited out the grace
+  // period); the server's own online flag must agree.
+  function claimDisconnect() {
+    return endGameBy("disconnect", (cur, me) => {
+      const opp = me === "B" ? cur.white : cur.black;
+      return cur.online && cur.online[opp] ? null : me;
+    });
+  }
+
+  // Ask to take back one move each; the clock pauses until the answer.
+  async function requestUndo() {
+    if (!current) return;
+    await runTransaction(current.roomRef, (cur) => {
+      if (!cur) return cur;
+      if (!seatOf(cur) || !inPlay(cur) || undoPending(cur)) return cur;
+      const n = decodeMoves(cur.moves || "").length;
+      if (!n) return cur;
+      cur.undoReq = { by: uid, n, elapsed: cur.turnAt ? Math.max(0, serverNow() - cur.turnAt) : 0, state: "pending" };
+      return cur;
+    });
+  }
+
+  async function answerUndo(accept) {
+    if (!current) return;
+    await runTransaction(current.roomRef, (cur) => {
+      if (!cur) return cur;
+      const u = cur.undoReq;
+      if (!seatOf(cur) || !inPlay(cur) || !undoPending(cur) || u.by === uid) return cur;
+      const list = decodeMoves(cur.moves || "");
+      if (list.length !== u.n) { cur.undoReq = null; return cur; } // the board moved on
+      if (accept) {
+        cur.moves = encodeMoves(list.slice(0, list.length - Math.min(2, list.length)));
+        cur.turnAt = serverNow();
+        cur.undoReq = null;
+      } else {
+        cur.turnAt = serverNow() - (u.elapsed || 0); // resume the paused clock
+        cur.undoReq = { by: u.by, state: "declined" };
+      }
+      return cur;
+    });
+  }
+
   async function requestRematch() {
     if (!current) return;
     await runTransaction(current.roomRef, (cur) => {
       if (!cur) return cur;
-      if (!cur.winner || (cur.black !== uid && cur.white !== uid)) return cur; // maybe stale: let the server check
+      if (!cur.winner || !seatOf(cur)) return cur;
       cur.rematch = cur.rematch || {};
       cur.rematch[uid] = true;
+      cur.rematchDeclinedBy = null;
       if (cur.rematch[cur.black] && cur.rematch[cur.white]) {
         // Both agreed: swap colours and start the next round.
         const b = cur.black;
@@ -1790,9 +2077,23 @@ async function init() {
         cur.white = b;
         cur.moves = "";
         cur.winner = "";
+        cur.endReason = null;
+        cur.undoReq = null;
         cur.rematch = null;
+        cur.turnAt = serverNow();
         cur.round = (cur.round || 1) + 1;
       }
+      return cur;
+    });
+  }
+
+  async function declineRematch() {
+    if (!current) return;
+    await runTransaction(current.roomRef, (cur) => {
+      if (!cur) return cur;
+      if (!cur.winner || !seatOf(cur)) return cur;
+      cur.rematch = null;
+      cur.rematchDeclinedBy = uid;
       return cur;
     });
   }
@@ -1801,7 +2102,11 @@ async function init() {
     return push(ref(db, "games"), Object.assign({}, rec, { at: serverTimestamp() })).catch(() => {});
   }
 
-  publish({ available: true, createRoom, joinRoom, watchRoom, leaveRoom, playMove, requestRematch, logGame });
+  publish({
+    available: true, turnLimitMs: TURN_LIMIT_MS, offlineGraceMs: OFFLINE_GRACE_MS, serverNow,
+    createRoom, joinRoom, watchRoom, leaveRoom, playMove, claimTimeout, claimDisconnect,
+    requestUndo, answerUndo, requestRematch, declineRematch, logGame,
+  });
 }
 
 init().catch((err) => {
