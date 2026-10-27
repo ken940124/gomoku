@@ -1250,6 +1250,7 @@
     var mine = winner === room.myColor;
     if (room.endReason === "disconnect") return mine ? "對方已離線，遊戲勝利！" : "你離線太久，判定落敗";
     if (room.endReason === "timeout") return mine ? "對手超過 30 秒沒下，你獲勝了！" : "你超過 30 秒沒下，判定落敗";
+    if (room.endReason === "forbidden") return mine ? "對手下了禁手，判你勝利！" : "你下了禁手，判定落敗（請按 Ctrl+F5 更新網頁）";
     return mine ? "你獲勝了！（" + colorZh(winner) + "）" : "對手獲勝（" + colorZh(winner) + "）";
   }
   function isHappyEnding() {
@@ -1677,7 +1678,7 @@
 
   // Mirror the shared room into local state. `s` comes from GomokuNet's
   // watchRoom (seats, moves, result, clock, pending undo / rematch requests).
-  var ROOM_FIELDS = ["myColor", "hasOpponent", "oppOnline", "renju", "round", "turnAt", "endReason",
+  var ROOM_FIELDS = ["myColor", "hasOpponent", "oppOnline", "oppOutdated", "renju", "round", "turnAt", "endReason",
     "rematchMine", "rematchOpp", "rematchDeclined", "undoPending", "undoMine", "undoDeclined"];
   function applyRoomState(s) {
     if (gameType !== "online" || !room) return;
@@ -1701,6 +1702,23 @@
     gameOver = !!s.winner;
     winner = s.winner || null;
     render();
+    if (!gameOver && s.renju && s.myColor === "W" && firstForbiddenBlackMove(s.moves) >= 0) {
+      withNet(function (net) {
+        net.claimForbidden(firstForbiddenBlackMove).then(function (ended) { if (ended) logFinishedGame(ended); });
+      });
+    }
+  }
+
+  // Index of the first Black move in `list` that was forbidden when played
+  // (Renju), or -1.
+  function firstForbiddenBlackMove(list) {
+    var b = freshBoard();
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i][0], c = list[i][1];
+      if (i % 2 === 0 && forbiddenReason(b, r, c, "B", true)) return i;
+      b[r][c] = i % 2 === 0 ? "B" : "W";
+    }
+    return -1;
   }
 
   // The bar under the board: the opponent's undo or rematch request (with
@@ -1711,6 +1729,7 @@
     if (gameType === "online" && room) {
       if (!gameOver && room.undoPending && !room.undoMine) { text = "對手請求悔棋（雙方各退一步），要同意嗎？"; ask = "undo"; }
       else if (!gameOver && room.undoDeclined) text = "對手拒絕了悔棋。";
+      else if (room.oppOutdated) text = "對手用的是舊版網頁，請對方按 Ctrl+F5（手機請重新整理）更新後再下。";
       else if (gameOver && room.rematchOpp && !room.rematchMine) { text = "對手邀請再來一局（黑白互換），要同意嗎？"; ask = "rematch"; }
       else if (gameOver && room.rematchDeclined) text = "對手拒絕了再來一局。";
     }
@@ -1880,6 +1899,9 @@ async function init() {
   const serverNow = () => Date.now() + clockOffset;
   const TURN_LIMIT_MS = 30000;
   const OFFLINE_GRACE_MS = 10000;
+  // Bump when the rules a client enforces change, so players on a stale
+  // cached page can be told to reload.
+  const RULES_VERSION = 2;
 
   const seatOf = (cur) => (cur.black === uid ? "B" : (cur.white === uid ? "W" : null));
   const inPlay = (cur) => !!cur.white && !cur.winner;
@@ -1921,6 +1943,7 @@ async function init() {
     const onlineRef = ref(db, "rooms/" + code + "/online/" + uid);
     onDisconnect(onlineRef).set(false);
     set(onlineRef, true);
+    set(ref(db, "rooms/" + code + "/clients/" + uid), RULES_VERSION);
     const unsubscribe = onValue(roomRef, (snap) => {
       const r = snap.val();
       if (!r) return;
@@ -1932,6 +1955,7 @@ async function init() {
         myColor,
         hasOpponent: !!opp,
         oppOnline: !!(opp && r.online && r.online[opp]),
+        oppOutdated: !!(opp && r.online && r.online[opp] && !(r.clients && r.clients[opp] >= RULES_VERSION)),
         renju: !!r.renju,
         moves: decodeMoves(r.moves || ""),
         winner: r.winner || "",
@@ -2029,6 +2053,15 @@ async function init() {
     });
   }
 
+  // White's client re-checks every Black move with its own rules: a client
+  // on an old page (or a tampered one) can't slip a forbidden move through.
+  // firstForbidden(list) returns the index of the first forbidden Black
+  // move, or -1.
+  function claimForbidden(firstForbidden) {
+    return endGameBy("forbidden", (cur, me) =>
+      (me === "W" && cur.renju && firstForbidden(decodeMoves(cur.moves || "")) >= 0) ? "W" : null);
+  }
+
   // Ask to take back one move each; the clock pauses until the answer.
   async function requestUndo() {
     if (!current) return;
@@ -2104,7 +2137,7 @@ async function init() {
 
   publish({
     available: true, turnLimitMs: TURN_LIMIT_MS, offlineGraceMs: OFFLINE_GRACE_MS, serverNow,
-    createRoom, joinRoom, watchRoom, leaveRoom, playMove, claimTimeout, claimDisconnect,
+    createRoom, joinRoom, watchRoom, leaveRoom, playMove, claimTimeout, claimDisconnect, claimForbidden,
     requestUndo, answerUndo, requestRematch, declineRematch, logGame,
   });
 }
