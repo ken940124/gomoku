@@ -1117,6 +1117,18 @@
       }
     });
 
+    // Renju: mark the points Black may not play, like a stamp on the board.
+    (opts.forbidden || []).forEach(function (f) {
+      var p = pxFromRC0(f.r, f.c);
+      ctx.beginPath(); ctx.arc(p[0], p[1], stoneR * 0.82, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,245,235,0.55)"; ctx.fill();
+      ctx.lineWidth = Math.max(1.5, step * 0.05); ctx.strokeStyle = "#b3392c"; ctx.stroke();
+      ctx.fillStyle = "#b3392c";
+      ctx.font = "800 " + (stoneR * (f.label.length > 1 ? 0.78 : 0.95)) + "px 'Noto Sans TC', sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(f.label, p[0], p[1] + stoneR * 0.04);
+    });
+
     return { pad: pad, step: step };
   }
 
@@ -1219,6 +1231,7 @@
   renjuToggle.addEventListener("change", function () {
     renjuEnabled = renjuToggle.checked;
     hideForbiddenMsg();
+    if (view === "play") render();
   });
 
   function stonesUpTo(n) {
@@ -1231,6 +1244,20 @@
     if (gameType === "ai") return !thinking;
     if (gameType === "local") return true;
     return !!room && room.hasOpponent && !room.undoPending && room.myColor === turnColor();
+  }
+
+  // While the person at this device is about to play Black under Renju,
+  // every forbidden point on the board, labelled 33 / 44 / 長 (overline).
+  var FORBIDDEN_MARKS = { "double-three": "33", "double-four": "44", "overline": "長" };
+  function forbiddenPointsForViewer() {
+    if (!renjuEnabled || !canPlayNow() || turnColor() !== "B") return [];
+    var out = [];
+    for (var r = 0; r < SIZE; r++) for (var c = 0; c < SIZE; c++) {
+      if (board[r][c] !== ".") continue;
+      var why = forbiddenReason(board, r, c, "B", true);
+      if (why) out.push({ r: r, c: c, label: FORBIDDEN_MARKS[why] || "禁" });
+    }
+    return out;
   }
 
   function turnPillHtml() {
@@ -1279,7 +1306,7 @@
 
     if (view === "play") {
       var visible = stonesUpTo(moves.length);
-      drawBoard(boardCanvas, visible, { lastMoveOnly: true, maxN: moves.length });
+      drawBoard(boardCanvas, visible, { lastMoveOnly: true, maxN: moves.length, forbidden: forbiddenPointsForViewer() });
       boardCanvas.className = canPlayNow() ? "clickable" : "locked";
       turnPill.classList.toggle("hidden", gameOver);
       if (!gameOver) turnPill.innerHTML = turnPillHtml();
