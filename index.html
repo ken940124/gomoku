@@ -134,6 +134,7 @@
   .renju-toggle input { accent-color: var(--seal); width: 15px; height: 15px; }
 
   .status-row button.btn.secondary { margin-left: auto; font-size: 12.5px; padding: 7px 12px; }
+  .status-row #btnDraw { margin-left: 0; }
 
   .analyze-progress { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
   .analyze-result { background: var(--panel-2); border-radius: 4px; padding: 14px 16px; font-size: 13.5px; display: flex; flex-direction: column; gap: 8px; }
@@ -230,6 +231,7 @@
         <span class="turn-pill" id="turnPill"><span class="stone-dot b"></span>輪到你（黑棋）</span>
         <span class="thinking hidden" id="thinking"><span class="spinner"></span>白棋思考中…</span>
         <button class="btn secondary" id="btnUndo" title="悔棋（一局限一次）">↺ 悔棋</button>
+        <button class="btn secondary hidden" id="btnDraw" title="提議和局">½ 和局</button>
       </div>
 
       <div class="seat-note hidden" id="seatNote" role="status"></div>
@@ -1138,7 +1140,7 @@
   // gameType: "ai" (you are Black vs the engine), "local" (two people on
   // one device), "online" (a friend room synced through GomokuNet).
   // view: "menu" | "play" | "replay".
-  var board, moves, gameOver, winner, view, replayIndex, thinking, undoUsed, analyzing;
+  var board, moves, gameOver, winner, view, replayIndex, thinking, undoUsed, analyzing, drawAgreed;
   var gameType = "ai";
   var gameStartedAt = 0;
   var room = null; // online: { code, myColor, hasOpponent, oppOnline, renju, rematchMine, rematchOpp }
@@ -1175,6 +1177,7 @@
     view = "play";
     thinking = false;
     undoUsed = false;
+    drawAgreed = false;
     analyzing = false;
     gameStartedAt = Date.now();
     hideForbiddenMsg();
@@ -1200,6 +1203,7 @@
   var renjuEnabled = renjuToggle.checked;
   var forbiddenMsgTimer = null;
   var btnUndo = document.getElementById("btnUndo");
+  var btnDraw = document.getElementById("btnDraw");
   var btnAnalyze = document.getElementById("btnAnalyze");
   var btnNewGame = document.getElementById("btnNewGame");
   var btnNewFromEnd = document.getElementById("btnNewFromEnd");
@@ -1271,7 +1275,7 @@
   }
 
   function endgameText() {
-    if (winner === "D") return "和局（棋盤已下滿）";
+    if (winner === "D") return drawWasAgreed() ? "雙方同意和局" : "和局（棋盤已下滿）";
     if (gameType === "ai") return winner === "B" ? "你獲勝了！" : "白棋獲勝";
     if (gameType === "local") return colorZh(winner) + "獲勝！";
     var mine = winner === room.myColor;
@@ -1279,6 +1283,9 @@
     if (room.endReason === "timeout") return mine ? "對手超過 30 秒沒下，你獲勝了！" : "你超過 30 秒沒下，判定落敗";
     if (room.endReason === "forbidden") return mine ? "對手下了禁手，判你勝利！" : "你下了禁手，判定落敗（請按 Ctrl+F5 更新網頁）";
     return mine ? "你獲勝了！（" + colorZh(winner) + "）" : "對手獲勝（" + colorZh(winner) + "）";
+  }
+  function drawWasAgreed() {
+    return gameType === "online" ? !!room && room.endReason === "agreed" : drawAgreed;
   }
   function isHappyEnding() {
     if (winner === "D") return false;
@@ -1329,6 +1336,14 @@
         btnUndo.disabled = gameOver || !room || !room.hasOpponent || moves.length === 0 || room.undoPending;
         btnUndo.textContent = room && room.undoMine ? "↺ 等對手回覆…" : "↺ 悔棋";
         btnUndo.title = "請對手同意後，雙方各退一步";
+      }
+      btnDraw.classList.toggle("hidden", gameType === "ai");
+      if (gameType === "local") {
+        btnDraw.disabled = gameOver || moves.length === 0;
+        btnDraw.textContent = "½ 和局";
+      } else if (gameType === "online") {
+        btnDraw.disabled = gameOver || !room || !room.hasOpponent || moves.length === 0 || room.drawPending;
+        btnDraw.textContent = room && room.drawMine ? "½ 等對手回覆…" : "½ 和局";
       }
       if (gameOver) {
         endgamePanel.classList.toggle("you-win", isHappyEnding());
@@ -1407,6 +1422,7 @@
     };
     if (gameType === "ai") { rec.undoUsed = undoUsed; rec.human = "B"; }
     if (final && final.endReason) rec.endReason = final.endReason;
+    if (!final && drawAgreed) rec.endReason = "agreed";
     withNet(function (net) { if (net.available) net.logGame(rec); });
   }
 
@@ -1555,6 +1571,20 @@
     render();
   });
 
+  // Local: both players are at this device, so one confirm is the consent.
+  // Online: the opponent has to accept the offer.
+  btnDraw.addEventListener("click", function () {
+    if (view !== "play" || gameOver || moves.length === 0) return;
+    if (gameType === "local") {
+      if (!confirm("雙方都同意和局嗎？")) return;
+      drawAgreed = true;
+      hideForbiddenMsg();
+      endGame("D");
+    } else if (gameType === "online" && room && !room.drawPending) {
+      withNet(function (net) { net.requestDraw(); });
+    }
+  });
+
   btnAnalyze.addEventListener("click", function () {
     if (!gameOver || analyzing || winner === "D") return;
     analyzing = true;
@@ -1701,7 +1731,8 @@
     gameType = "online";
     room = { code: code, myColor: "B", hasOpponent: false, oppOnline: false, renju: true,
              rematchMine: false, rematchOpp: false, rematchDeclined: false, round: 0, turnAt: 0,
-             endReason: "", undoPending: false, undoMine: false, undoDeclined: false, offlineSince: 0 };
+             endReason: "", undoPending: false, undoMine: false, undoDeclined: false,
+             drawPending: false, drawMine: false, drawDeclined: false, offlineSince: 0 };
     resetGame();
     try { history.replaceState(null, "", "#room=" + code); } catch (e) {}
     net.watchRoom(code, applyRoomState);
@@ -1710,7 +1741,8 @@
   // Mirror the shared room into local state. `s` comes from GomokuNet's
   // watchRoom (seats, moves, result, clock, pending undo / rematch requests).
   var ROOM_FIELDS = ["myColor", "hasOpponent", "oppOnline", "oppOutdated", "renju", "round", "turnAt", "endReason",
-    "rematchMine", "rematchOpp", "rematchDeclined", "undoPending", "undoMine", "undoDeclined"];
+    "rematchMine", "rematchOpp", "rematchDeclined", "undoPending", "undoMine", "undoDeclined",
+    "drawPending", "drawMine", "drawDeclined"];
   function applyRoomState(s) {
     if (gameType !== "online" || !room) return;
     var newRound = s.round !== room.round;
@@ -1752,14 +1784,16 @@
     return -1;
   }
 
-  // The bar under the board: the opponent's undo or rematch request (with
+  // The bar under the board: the opponent's undo, draw or rematch request (with
   // 同意 / 拒絕), or word that they turned ours down.
   var requestKind = "";
   function renderRequest() {
     var text = "", ask = "";
     if (gameType === "online" && room) {
       if (!gameOver && room.undoPending && !room.undoMine) { text = "對手請求悔棋（雙方各退一步），要同意嗎？"; ask = "undo"; }
+      else if (!gameOver && room.drawPending && !room.drawMine) { text = "對手提議和局，要同意嗎？"; ask = "draw"; }
       else if (!gameOver && room.undoDeclined) text = "對手拒絕了悔棋。";
+      else if (!gameOver && room.drawDeclined) text = "對手拒絕了和局，繼續下吧。";
       else if (room.oppOutdated) text = "對手用的是舊版網頁，請對方按 Ctrl+F5（手機請重新整理）更新後再下。";
       else if (gameOver && room.rematchOpp && !room.rematchMine) { text = "對手邀請再來一局（黑白互換），要同意嗎？"; ask = "rematch"; }
       else if (gameOver && room.rematchDeclined) text = "對手拒絕了再來一局。";
@@ -1771,10 +1805,14 @@
   }
   document.getElementById("btnReqYes").addEventListener("click", function () {
     if (requestKind === "undo") withNet(function (net) { net.answerUndo(true); });
+    else if (requestKind === "draw") withNet(function (net) {
+      net.answerDraw(true).then(function (ended) { if (ended) logFinishedGame(ended); });
+    });
     else if (requestKind === "rematch") withNet(function (net) { net.requestRematch(); });
   });
   document.getElementById("btnReqNo").addEventListener("click", function () {
     if (requestKind === "undo") withNet(function (net) { net.answerUndo(false); });
+    else if (requestKind === "draw") withNet(function (net) { net.answerDraw(false); });
     else if (requestKind === "rematch") withNet(function (net) { net.declineRematch(); });
   });
 
@@ -1932,11 +1970,12 @@ async function init() {
   const OFFLINE_GRACE_MS = 10000;
   // Bump when the rules a client enforces change, so players on a stale
   // cached page can be told to reload.
-  const RULES_VERSION = 2;
+  const RULES_VERSION = 3;
 
   const seatOf = (cur) => (cur.black === uid ? "B" : (cur.white === uid ? "W" : null));
   const inPlay = (cur) => !!cur.white && !cur.winner;
   const undoPending = (cur) => !!(cur.undoReq && cur.undoReq.state === "pending");
+  const drawPending = (cur) => !!(cur.drawReq && cur.drawReq.state === "pending");
 
   let current = null; // { code, roomRef, unsubscribe, onlineRef }
 
@@ -1982,6 +2021,7 @@ async function init() {
       const opp = myColor === "B" ? r.white : r.black;
       const rematch = r.rematch || {};
       const u = r.undoReq || null;
+      const d = r.drawReq || null;
       cb({
         myColor,
         hasOpponent: !!opp,
@@ -1999,6 +2039,9 @@ async function init() {
         undoPending: !!(u && u.state === "pending"),
         undoMine: !!(u && u.state === "pending" && u.by === uid),
         undoDeclined: !!(u && u.state === "declined" && u.by === uid),
+        drawPending: !!(d && d.state === "pending"),
+        drawMine: !!(d && d.state === "pending" && d.by === uid),
+        drawDeclined: !!(d && d.state === "declined" && d.by === uid),
       });
     });
     current = { code, roomRef, onlineRef, unsubscribe };
@@ -2036,6 +2079,7 @@ async function init() {
       cur.moves = encodeMoves(list);
       cur.turnAt = serverNow();
       cur.undoReq = null;
+      if (!drawPending(cur)) cur.drawReq = null;
       applied = true;
       if (v.winner) { cur.winner = v.winner; endedGame = true; finalList = list; finalWinner = v.winner; }
       return cur;
@@ -2060,6 +2104,7 @@ async function init() {
       cur.winner = win;
       cur.endReason = reason;
       cur.undoReq = null;
+      cur.drawReq = null;
       ended = { winner: win, list: decodeMoves(cur.moves || ""), endReason: reason };
       return cur;
     });
@@ -2126,6 +2171,32 @@ async function init() {
     });
   }
 
+  // Offer a draw. The clock keeps running and play goes on; the offer stands
+  // until the opponent answers (or the game ends some other way).
+  async function requestDraw() {
+    if (!current) return;
+    await runTransaction(current.roomRef, (cur) => {
+      if (!cur) return cur;
+      if (!seatOf(cur) || !inPlay(cur) || drawPending(cur)) return cur;
+      cur.drawReq = { by: uid, state: "pending" };
+      return cur;
+    });
+  }
+
+  // Accepting ends the game as a draw and resolves like endGameBy (the
+  // accepting client logs it); declining tells the offerer.
+  async function answerDraw(accept) {
+    if (!current) return null;
+    if (accept) return endGameBy("agreed", (cur) => (drawPending(cur) && cur.drawReq.by !== uid ? "D" : null));
+    await runTransaction(current.roomRef, (cur) => {
+      if (!cur) return cur;
+      if (!seatOf(cur) || !inPlay(cur) || !drawPending(cur) || cur.drawReq.by === uid) return cur;
+      cur.drawReq = { by: cur.drawReq.by, state: "declined" };
+      return cur;
+    });
+    return null;
+  }
+
   async function requestRematch() {
     if (!current) return;
     await runTransaction(current.roomRef, (cur) => {
@@ -2143,6 +2214,7 @@ async function init() {
         cur.winner = "";
         cur.endReason = null;
         cur.undoReq = null;
+        cur.drawReq = null;
         cur.rematch = null;
         cur.turnAt = serverNow();
         cur.round = (cur.round || 1) + 1;
@@ -2169,7 +2241,7 @@ async function init() {
   publish({
     available: true, turnLimitMs: TURN_LIMIT_MS, offlineGraceMs: OFFLINE_GRACE_MS, serverNow,
     createRoom, joinRoom, watchRoom, leaveRoom, playMove, claimTimeout, claimDisconnect, claimForbidden,
-    requestUndo, answerUndo, requestRematch, declineRematch, logGame,
+    requestUndo, answerUndo, requestDraw, answerDraw, requestRematch, declineRematch, logGame,
   });
 }
 
